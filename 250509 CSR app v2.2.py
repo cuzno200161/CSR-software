@@ -41,6 +41,7 @@ class CSRApp:
         self.notebook.add(self.tab3, text='OACD Table Builder')
         self.notebook.pack(expand=1, fill='both')
         
+        """TAB 1"""
         # Main paned window (left, center, right)
         self.main_paned = tk.PanedWindow(self.tab1, orient=tk.HORIZONTAL, sashrelief=tk.RAISED, sashwidth=8)
         self.main_paned.pack(fill=tk.BOTH, expand=True)
@@ -221,6 +222,8 @@ class CSRApp:
         toolbar2 = NavigationToolbar2Tk(self.canvas2, plot2_frame)
         toolbar2.update()
         
+        """TAB 2"""
+              
     def select_file(self):
         """Load experimental data from file while preserving custom column names"""
         file_path = filedialog.askopenfilename(filetypes=[("Excel files", "*.xlsx *.xls")])

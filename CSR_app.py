@@ -752,7 +752,6 @@ class CSRApp:
         except Exception as e:
             messagebox.showerror("Error", f"Failed to update 3D plot: {str(e)}")
 
-
     def generate_bits_array(self, n_factors):
         if n_factors <= 0:
             return np.array([])
@@ -784,7 +783,6 @@ class CSRApp:
         
         # Convert to numpy array (no need to sort, order is enforced above)
         return np.array(bits, dtype=int)
-
 
     def create_design_matrix(self, X_input_scaled, bits_array):
         if X_input_scaled.size == 0 or bits_array.size == 0:
@@ -868,7 +866,6 @@ class CSRApp:
         elif self.norm_select.get() == "[0, 1]":
             return x_fitting_np * range_val + self.norm_x_min
         return x_fitting_np
-
 
     def generate_equation_and_definitions(self, beta, bits_array, n_factors):
         if beta is None or bits_array is None or bits_array.size == 0 or len(beta) != bits_array.shape[0]:
@@ -1003,7 +1000,6 @@ class CSRApp:
         
         # Add sign (handled when joining terms)
         return f"{'+' if coef >= 0 else '-'} {term_str}"
-
 
     def plot_results(self, n_factors, x_plot_idx=0, y_plot_idx=1):
         self.figure1.clf(); self.figure1.subplots_adjust(bottom=0.18, left=0.18, top=0.9, right=0.95); self.figure1.patch.set_facecolor('#F0F0F0')
@@ -1187,7 +1183,6 @@ class CSRApp:
         
         canvas_to_draw.draw()
         return term_details_for_return
-
 
     def plot_partial_pie_wedges(self, ax, factor_contributions_map,
                                sector_start_angle_deg, sector_end_angle_deg,
@@ -1402,7 +1397,6 @@ class CSRApp:
                 ax.text(0.5, 0.5, f"No significant {term_name.lower()}\ncontributions",
                        ha='center', va='center', fontsize=8, color='gray')
                 canvas.draw()
-
 
     def _generate_shades(self, base_color_hex, n_shades):
         if n_shades == 0:

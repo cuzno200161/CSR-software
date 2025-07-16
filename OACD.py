@@ -269,11 +269,10 @@ class OACD:
         
         return 1;
     
-if __name__ == "__main__":
-    oacd = OACD();
-    oacd.set_factor_num(10);
-    oacd.set_table_size("Large");
-    built = oacd.build_table();
+# if __name__ == "__main__":
+#     oacd = OACD();
+#     oacd.set_factor_num(10);
+#     oacd.set_table_size("Large");
+#     built = oacd.build_table();
 
-    print(oacd.table)
-    
+#     print(oacd.table)

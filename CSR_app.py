@@ -13,8 +13,6 @@ import matplotlib.colors as mcolors
 import matplotlib.patches # For Wedge
 from PIL import Image, ImageDraw, ImageFont
 
-from Integration import Integration;
-from Coefficients import Coefficients;
 from OACD import OACD;
 
 class CSRApp:
@@ -114,9 +112,7 @@ class CSRApp:
 
         self.create_csr_integration_tab()
         self.create_coefficient_analysis_tab()
-
-        placeholder_label_tab3 = ttk.Label(self.tab3, text="OACD Table Builder - To be implemented", font=self.title_font)
-        placeholder_label_tab3.pack(padx=10, pady=20, anchor='center')
+        self.create_oacd_tab()
 
     def create_csr_integration_tab(self):
         self.main_paned = tk.PanedWindow(self.tab1, orient=tk.HORIZONTAL, sashrelief=tk.GROOVE, sashwidth=8, background="#D0D0D0", bd=0)
@@ -383,6 +379,145 @@ class CSRApp:
                 self.pie_figures[i] = fig
                 self.pie_canvas[i] = canvas
                 self.pie_axes[i] = ax
+
+    def create_oacd_tab(self):
+        # Main container for OACD tab
+        oacd_frame = ttk.Frame(self.tab3, style="App.TFrame")
+        oacd_frame.pack(fill='both', expand=True, padx=10, pady=10)
+
+        # Split left (controls) and right (table display)
+        left_frame = ttk.Frame(oacd_frame, style="App.TFrame")
+        left_frame.pack(side='left', fill='y', padx=(0, 20), pady=5)
+        right_frame = ttk.Frame(oacd_frame, style="App.TFrame")
+        right_frame.pack(side='left', fill='both', expand=True, pady=5)
+
+        # --- OACD Logic ---
+        self.oacd = OACD()
+        self.oacd_factor_num = tk.IntVar(value=2)
+        self.oacd_table_size = tk.StringVar(value="Small")
+        self.oacd_extrenum_vars = []  # List of (min_var, max_var) for each factor
+        self.oacd_table = None
+
+        # --- Controls ---
+        ttk.Label(left_frame, text="Number of Factors:", font=self.label_font).pack(anchor='w', pady=(0,2))
+        factor_num_combo = ttk.Combobox(left_frame, textvariable=self.oacd_factor_num, state="readonly", font=self.entry_font, width=8)
+        factor_num_combo['values'] = list(range(2, 11))
+        factor_num_combo.pack(anchor='w', pady=(0,8))
+        factor_num_combo.bind('<<ComboboxSelected>>', lambda e: self._oacd_update_extrenum_table())
+
+        ttk.Label(left_frame, text="Table Size:", font=self.label_font).pack(anchor='w', pady=(0,2))
+        table_size_combo = ttk.Combobox(left_frame, textvariable=self.oacd_table_size, state="readonly", font=self.entry_font, width=8)
+        table_size_combo['values'] = ["Small", "Medium", "Large"]
+        table_size_combo.pack(anchor='w', pady=(0,8))
+
+        # --- Interactive Extrenum Table ---
+        extrenum_frame = ttk.LabelFrame(left_frame, text="Factor Min/Max (Extrenum)", padding=(8,6,8,8))
+        extrenum_frame.pack(fill='x', pady=(10,8))
+        self.oacd_extrenum_table_frame = ttk.Frame(extrenum_frame, style="App.TFrame")
+        self.oacd_extrenum_table_frame.pack(fill='x', expand=True)
+        self._oacd_update_extrenum_table()
+
+        # --- Set all min/max ---
+        set_all_frame = ttk.Frame(left_frame, style="App.TFrame")
+        set_all_frame.pack(fill='x', pady=(5,8))
+        ttk.Label(set_all_frame, text="Set all min:").pack(side='left')
+        self.oacd_set_all_min = tk.DoubleVar(value=0.0)
+        min_entry = ttk.Entry(set_all_frame, textvariable=self.oacd_set_all_min, width=7, font=self.entry_font)
+        min_entry.pack(side='left', padx=(2,8))
+        ttk.Button(set_all_frame, text="Apply", command=self._oacd_apply_all_min, width=6).pack(side='left')
+        ttk.Label(set_all_frame, text="Set all max:").pack(side='left', padx=(10,0))
+        self.oacd_set_all_max = tk.DoubleVar(value=0.0)
+        max_entry = ttk.Entry(set_all_frame, textvariable=self.oacd_set_all_max, width=7, font=self.entry_font)
+        max_entry.pack(side='left', padx=(2,8))
+        ttk.Button(set_all_frame, text="Apply", command=self._oacd_apply_all_max, width=6).pack(side='left')
+
+        # --- Generate and Export Buttons ---
+        button_frame = ttk.Frame(left_frame, style="App.TFrame")
+        button_frame.pack(fill='x', pady=(15,5))
+        ttk.Button(button_frame, text="Generate OACD Table", command=self._oacd_generate_table, style="Accent.TButton").pack(fill='x', pady=(0,8))
+        ttk.Button(button_frame, text="Export as Excel", command=self._oacd_export_table).pack(fill='x', pady=(0,8))
+        ttk.Button(button_frame, text="Import Extrenum from Excel", command=self._oacd_import_extrenum).pack(fill='x')
+
+        # --- OACD Table Display ---
+        table_disp_frame = ttk.LabelFrame(right_frame, text="Generated OACD Table", padding=(8,6,8,8))
+        table_disp_frame.pack(fill='both', expand=True)
+        self.oacd_table_tree = ttk.Treeview(table_disp_frame, show='headings')
+        self.oacd_table_tree.pack(fill='both', expand=True)
+        self.oacd_table_scroll_x = ttk.Scrollbar(table_disp_frame, orient='horizontal', command=self.oacd_table_tree.xview)
+        self.oacd_table_tree.configure(xscrollcommand=self.oacd_table_scroll_x.set)
+        self.oacd_table_scroll_x.pack(side='bottom', fill='x')
+        self.oacd_table_scroll_y = ttk.Scrollbar(table_disp_frame, orient='vertical', command=self.oacd_table_tree.yview)
+        self.oacd_table_tree.configure(yscrollcommand=self.oacd_table_scroll_y.set)
+        self.oacd_table_scroll_y.pack(side='right', fill='y')
+
+    def _oacd_update_extrenum_table(self):
+        # Clear previous widgets
+        for widget in self.oacd_extrenum_table_frame.winfo_children():
+            widget.destroy()
+        self.oacd_extrenum_vars = []
+        n = self.oacd_factor_num.get() if hasattr(self, 'oacd_factor_num') else 2
+        # Header
+        ttk.Label(self.oacd_extrenum_table_frame, text="Factor", width=8).grid(row=0, column=0, padx=2, pady=2)
+        ttk.Label(self.oacd_extrenum_table_frame, text="Min", width=8).grid(row=0, column=1, padx=2, pady=2)
+        ttk.Label(self.oacd_extrenum_table_frame, text="Max", width=8).grid(row=0, column=2, padx=2, pady=2)
+        for i in range(n):
+            ttk.Label(self.oacd_extrenum_table_frame, text=f"F{i+1}", width=8).grid(row=i+1, column=0, padx=2, pady=2)
+            min_var = tk.DoubleVar(value=0.0)
+            max_var = tk.DoubleVar(value=0.0)
+            min_entry = ttk.Entry(self.oacd_extrenum_table_frame, textvariable=min_var, width=8, font=self.entry_font)
+            max_entry = ttk.Entry(self.oacd_extrenum_table_frame, textvariable=max_var, width=8, font=self.entry_font)
+            min_entry.grid(row=i+1, column=1, padx=2, pady=2)
+            max_entry.grid(row=i+1, column=2, padx=2, pady=2)
+            self.oacd_extrenum_vars.append((min_var, max_var))
+
+    def _oacd_apply_all_min(self):
+        for min_var, _ in self.oacd_extrenum_vars:
+            min_var.set(self.oacd_set_all_min.get())
+
+    def _oacd_apply_all_max(self):
+        for _, max_var in self.oacd_extrenum_vars:
+            max_var.set(self.oacd_set_all_max.get())
+
+    def _oacd_generate_table(self):
+        # Set up OACD object
+        n = self.oacd_factor_num.get()
+        self.oacd.set_factor_num(n)
+        self.oacd.set_table_size(self.oacd_table_size.get())
+        # Build extrenum DataFrame from UI
+        extrenum = np.zeros((n,2))
+        for i, (min_var, max_var) in enumerate(self.oacd_extrenum_vars):
+            extrenum[i,0] = min_var.get()
+            extrenum[i,1] = max_var.get()
+        self.oacd.set_factor_extrenum(pd.DataFrame(extrenum))
+        result = self.oacd.build_table()
+        if result != 1:
+            messagebox.showerror("Error", "Failed to build OACD table. Check factor number and table size.")
+            return
+        self._oacd_display_table()
+
+    def _oacd_display_table(self):
+        # Clear previous
+        for col in self.oacd_table_tree.get_children():
+            self.oacd_table_tree.delete(col)
+        self.oacd_table_tree['columns'] = [f"F{i+1}" for i in range(self.oacd.table.shape[1])]
+        for i, col in enumerate(self.oacd_table_tree['columns']):
+            self.oacd_table_tree.heading(col, text=col)
+            self.oacd_table_tree.column(col, width=80, anchor='center')
+        for idx, row in self.oacd.table.iterrows():
+            self.oacd_table_tree.insert('', 'end', values=[f"{x:.4f}" for x in row.values])
+
+    def _oacd_export_table(self):
+        if self.oacd.table is None:
+            messagebox.showwarning("No Table", "Please generate the OACD table first.")
+            return
+        file_path = filedialog.asksaveasfilename(defaultextension='.xlsx', filetypes=[("Excel files", "*.xlsx")], title="Save OACD Table As")
+        if not file_path:
+            return
+        try:
+            self.oacd.table.to_excel(file_path, index=False)
+            messagebox.showinfo("Exported", f"OACD table exported to:\n{file_path}")
+        except Exception as e:
+            messagebox.showerror("Export Error", f"Failed to export table:\n{str(e)}")
 
     def select_file(self):
         file_path = filedialog.askopenfilename(filetypes=[("Excel files", "*.xlsx *.xls")])
@@ -1478,6 +1613,23 @@ class CSRApp:
             messagebox.showerror("Error", f"Failed to save charts:\n{str(e)}")
             # Clean up temp dir even if error occurs
             shutil.rmtree(temp_dir, ignore_errors=True)
+
+    def _oacd_import_extrenum(self):
+        file_path = filedialog.askopenfilename(filetypes=[("Excel files", "*.xlsx *.xls")], title="Select Extrenum Excel File")
+        if not file_path:
+            return
+        try:
+            df = pd.read_excel(file_path, header=None)
+            n = self.oacd_factor_num.get()
+            if df.shape != (n, 2):
+                messagebox.showerror("Import Error", f"Extrenum table must have {n} rows and 2 columns (min, max).\nImported shape: {df.shape}")
+                return
+            # Update UI variables
+            for i in range(n):
+                self.oacd_extrenum_vars[i][0].set(df.iloc[i,0])
+                self.oacd_extrenum_vars[i][1].set(df.iloc[i,1])
+        except Exception as e:
+            messagebox.showerror("Import Error", f"Failed to import extrenum table:\n{str(e)}")
 
 if __name__ == "__main__":
     root = tk.Tk()

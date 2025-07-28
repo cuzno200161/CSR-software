@@ -431,24 +431,33 @@ class CSRApp:
         max_entry.pack(side='left', padx=(2,8))
         ttk.Button(set_all_frame, text="Apply", command=self._oacd_apply_all_max, width=6).pack(side='left')
 
+        # --- Max Nonzero Controls ---
+        max_nonzero_frame = ttk.Frame(left_frame, style="App.TFrame")
+        max_nonzero_frame.pack(fill='x', pady=(5,8))
+        ttk.Label(max_nonzero_frame, text="Max Nonzero Factors:").pack(side='left')
+        self.oacd_max_nonzero_var = tk.IntVar(value=0)
+        max_nonzero_entry = ttk.Entry(max_nonzero_frame, textvariable=self.oacd_max_nonzero_var, width=7, font=self.entry_font)
+        max_nonzero_entry.pack(side='left', padx=(2,8))
+        ttk.Button(max_nonzero_frame, text="Apply", command=self._oacd_apply_max_nonzero, width=8).pack(side='left')
+
         # --- Generate and Export Buttons ---
         button_frame = ttk.Frame(left_frame, style="App.TFrame")
         button_frame.pack(fill='x', pady=(15,5))
+        ttk.Button(button_frame, text="Import Extrenum from Excel", command=self._oacd_import_extrenum).pack(fill='x', pady=(0,8))
         ttk.Button(button_frame, text="Generate OACD Table", command=self._oacd_generate_table, style="Accent.TButton").pack(fill='x', pady=(0,8))
         ttk.Button(button_frame, text="Export as Excel", command=self._oacd_export_table).pack(fill='x', pady=(0,8))
-        ttk.Button(button_frame, text="Import Extrenum from Excel", command=self._oacd_import_extrenum).pack(fill='x')
-
+        
         # --- OACD Table Display ---
         table_disp_frame = ttk.LabelFrame(right_frame, text="Generated OACD Table", padding=(8,6,8,8))
         table_disp_frame.pack(fill='both', expand=True)
-        self.oacd_table_tree = ttk.Treeview(table_disp_frame, show='headings')
+        x_scroll = ttk.Scrollbar(table_disp_frame, orient='horizontal')
+        x_scroll.pack(side='bottom', fill='x')
+        y_scroll = ttk.Scrollbar(table_disp_frame, orient='vertical')
+        y_scroll.pack(side='right', fill='y')
+        self.oacd_table_tree = ttk.Treeview(table_disp_frame, show='headings', xscrollcommand=x_scroll.set, yscrollcommand=y_scroll.set, height=15)
         self.oacd_table_tree.pack(fill='both', expand=True)
-        self.oacd_table_scroll_x = ttk.Scrollbar(table_disp_frame, orient='horizontal', command=self.oacd_table_tree.xview)
-        self.oacd_table_tree.configure(xscrollcommand=self.oacd_table_scroll_x.set)
-        self.oacd_table_scroll_x.pack(side='bottom', fill='x')
-        self.oacd_table_scroll_y = ttk.Scrollbar(table_disp_frame, orient='vertical', command=self.oacd_table_tree.yview)
-        self.oacd_table_tree.configure(yscrollcommand=self.oacd_table_scroll_y.set)
-        self.oacd_table_scroll_y.pack(side='right', fill='y')
+        x_scroll.config(command=self.oacd_table_tree.xview)
+        y_scroll.config(command=self.oacd_table_tree.yview)
 
     def _oacd_update_extrenum_table(self):
         # Clear previous widgets
@@ -478,6 +487,15 @@ class CSRApp:
         for _, max_var in self.oacd_extrenum_vars:
             max_var.set(self.oacd_set_all_max.get())
 
+    def _oacd_apply_max_nonzero(self):
+        value = self.oacd_max_nonzero_var.get()
+        if value <= 0:
+            tk.messagebox.showwarning("Invalid Value", "Please enter a positive integer for max nonzero factors.")
+            return
+        self.oacd.max_nonzero = value
+        self.oacd.reduce_levels()
+        self._oacd_display_table()
+
     def _oacd_generate_table(self):
         # Set up OACD object
         n = self.oacd_factor_num.get()
@@ -490,6 +508,7 @@ class CSRApp:
             extrenum[i,1] = max_var.get()
         self.oacd.set_factor_extrenum(pd.DataFrame(extrenum))
         result = self.oacd.build_table()
+        print(self.oacd.table)
         if result != 1:
             messagebox.showerror("Error", "Failed to build OACD table. Check factor number and table size.")
             return
@@ -499,12 +518,14 @@ class CSRApp:
         # Clear previous
         for col in self.oacd_table_tree.get_children():
             self.oacd_table_tree.delete(col)
-        self.oacd_table_tree['columns'] = [f"F{i+1}" for i in range(self.oacd.table.shape[1])]
-        for i, col in enumerate(self.oacd_table_tree['columns']):
+        columns = ["Run"] + [f"F{i+1}" for i in range(self.oacd.table.shape[1])]
+        self.oacd_table_tree['columns'] = columns
+        for i, col in enumerate(columns):
             self.oacd_table_tree.heading(col, text=col)
             self.oacd_table_tree.column(col, width=80, anchor='center')
         for idx, row in self.oacd.table.iterrows():
-            self.oacd_table_tree.insert('', 'end', values=[f"{x:.4f}" for x in row.values])
+            values = [str(idx+1)] + [f"{x:.4f}" for x in row.values]
+            self.oacd_table_tree.insert('', 'end', values=values)
 
     def _oacd_export_table(self):
         if self.oacd.table is None:

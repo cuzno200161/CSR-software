@@ -6,11 +6,11 @@ import numpy as np
 class OACD:
     def __init__(self):
         
-        # Variables for OACD Tables
         self.factor_num = None # 2, 3, 4, 5, 6, 7, 8, 9, 10
         self.table_size = None # Small, Medium, Large
         self.table = None # Pandas DataFrame object
         self.factor_extrenum = None # First column is minimum, second column is maximum; each row is a factor
+        self.max_nonzero = None; # Max number of non-zero factors
         
     def __str__(self):
         string = ""
@@ -22,8 +22,6 @@ class OACD:
         
     def set_factor_num(self, factor_num):
         self.factor_num = factor_num
-        
-        # When factor number is changed, the extrenum table is automatically changed too
         self.factor_extrenum = pd.DataFrame(np.ones((self.factor_num, 2)))
         self.factor_extrenum.iloc[:, 1] = -1; 
         
@@ -39,7 +37,7 @@ class OACD:
         if extrenum == "min":
             self.factor_extrenum.iloc[factor, 0] = value;
         elif extrenum == "max":
-            self.factor_extrenum.iloc[factor, 1] = value;
+            self.factor_extrenum.iloc[factor, 1] = value;    
         
     def excel_to_python(self, filepath):
         df = pd.read_excel(filepath, header=None)
@@ -263,16 +261,33 @@ class OACD:
         
         # Change the three-level design into the min, max, and average of each factor
         for factor in range(self.factor_num):
-            self.table.iloc[:, factor].replace(1, self.factor_extrenum.iloc[factor, 1])
-            self.table.iloc[:, factor].replace(-1, self.factor_extrenum.iloc[factor, 0])
-            self.table.iloc[:, factor].replace(0, (self.factor_extrenum.iloc[factor, 1] + self.factor_extrenum.iloc[factor, 0])/2)
-        
+            min_val = self.factor_extrenum.iloc[factor, 0]
+            max_val = self.factor_extrenum.iloc[factor, 1]
+            avg_val = (min_val + max_val) / 2
+            # Replace both int and float -1, 0, 1
+            self.table.iloc[:, factor] = self.table.iloc[:, factor].map(
+                lambda x: min_val if x == -1 or x == -1.0 else (max_val if x == 1 or x == 1.0 else (avg_val if x == 0 or x == 0.0 else x))
+            )
+            
         return 1;
     
+    def reduce_levels(self):
+        """
+        Remove rows from self.table where the number of nonzero factors exceeds self.max_nonzero.
+        Only applies if self.max_nonzero is not None and self.table is not None.
+        """
+        if self.max_nonzero is None or self.table is None:
+            return
+        # Count nonzero values per row (across all factor columns)
+        # Assume all columns are factors
+        mask = (self.table != 0).sum(axis=1) <= self.max_nonzero
+        self.table = self.table[mask].reset_index(drop=True)
+
+
 # if __name__ == "__main__":
 #     oacd = OACD();
-#     oacd.set_factor_num(10);
-#     oacd.set_table_size("Large");
-#     built = oacd.build_table();
+#     oacd.set_factor_num(2);
+#     oacd.set_table_size("Small");
+
 
 #     print(oacd.table)

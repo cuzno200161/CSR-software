@@ -13,7 +13,7 @@ import matplotlib.colors as mcolors
 import matplotlib.patches # For Wedge
 from PIL import Image, ImageDraw, ImageFont
 
-from OACD import OACD;
+from OACD import OACD
 
 class CSRApp:
     def __init__(self, root):
@@ -112,6 +112,7 @@ class CSRApp:
 
         self.create_csr_integration_tab()
         self.create_coefficient_analysis_tab()
+
         self.create_oacd_tab()
 
     def create_csr_integration_tab(self):
@@ -124,18 +125,16 @@ class CSRApp:
         center_frame = ttk.Frame(self.main_paned, padding=(5,15,15,15), style="App.TFrame")
         self.main_paned.add(center_frame, width=650, minsize=500, sticky="nsew")
 
-        right_paned_container = ttk.Frame(self.main_paned, style="App.TFrame", padding=0) # Container for PanedWindow
+        right_paned_container = ttk.Frame(self.main_paned, style="App.TFrame", padding=0)
         self.main_paned.add(right_paned_container, width=450, minsize=420, sticky="nsew")
 
         right_paned = tk.PanedWindow(right_paned_container, orient=tk.VERTICAL, sashrelief=tk.GROOVE, sashwidth=8, background="#D0D0D0", bd=0)
-        right_paned.pack(fill=tk.BOTH, expand=True, padx=5, pady=0) # Add padding around inner paned window
-
+        right_paned.pack(fill=tk.BOTH, expand=True, padx=5, pady=0)
 
         # === Left Panel Contents ===
         self.style.configure("Accent.TButton", font=self.button_font, foreground="white", background="#0078D7")
         self.style.map("Accent.TButton", background=[('active', '#005A9E'), ('pressed', '!disabled', '#004C8A')])
         ttk.Button(left_frame, text="Select Data File", command=self.select_file, style="Accent.TButton").pack(pady=(0,15), padx=5, fill='x')
-
 
         ttk.Label(left_frame, text="Project Name / File:").pack(anchor='w', padx=5)
         self.project_name_entry = ttk.Entry(left_frame, font=self.entry_font)
@@ -152,9 +151,9 @@ class CSRApp:
 
 
         ttk.Label(left_frame, text="Normalization Standard:").pack(anchor='w', padx=5)
-        self.norm_select = ttk.Combobox(left_frame, values=["None", "[-1, 1]", "[0, 1]"], state="readonly", font=self.entry_font)
+        self.norm_select = ttk.Combobox(left_frame, values=["[-1, 1]", "[0, 1]"], state="readonly", font=self.entry_font)
         self.norm_select.pack(fill='x', padx=5, pady=(2,10))
-        self.norm_select.current(0)
+        self.norm_select.current(1)  # Default to [0, 1]
 
 
         reg_frame = ttk.LabelFrame(left_frame, text="Regularization Parameter", padding=(10,5,10,10))
@@ -165,7 +164,7 @@ class CSRApp:
         self.alpha_value_label.grid(row=0, column=2, sticky='e', padx=(5,0), pady=3)
 
         # Then create the slider that references it
-        self.alpha_slider = ttk.Scale(reg_frame, from_=-4, to=2, orient=tk.HORIZONTAL, command=self.update_alpha_value)
+        self.alpha_slider = ttk.Scale(reg_frame, from_=-4, to=0, orient=tk.HORIZONTAL, command=self.update_alpha_value)
         self.alpha_slider.set(0)
         self.alpha_slider.grid(row=0, column=1, sticky='ew', padx=(10,0), pady=3)
 
@@ -203,51 +202,100 @@ class CSRApp:
         scrollbar_factor_def.pack(side=tk.RIGHT, fill=tk.Y)
         self.factor_definitions_text.pack(side=tk.LEFT, fill='both', expand=True)
 
-
         # === Center Panel Contents ===
         center_container = ttk.Frame(center_frame, style="App.TFrame")
         center_container.pack(fill='both', expand=True, pady=(0,5))
         
-        # Table goes at the top
-        table_container = ttk.Frame(center_container, style="App.TFrame")
-        table_container.pack(fill='both', expand=True)
+        # Create a scrollable frame for the factor selection
+        scroll_frame = ttk.Frame(center_container, style="App.TFrame")
+        scroll_frame.pack(fill='both', expand=True)
         
-        x_scroll = ttk.Scrollbar(table_container, orient='horizontal')
-        x_scroll.pack(side='bottom', fill='x')
-        y_scroll = ttk.Scrollbar(table_container, orient='vertical')
-        y_scroll.pack(side='right', fill='y')
-
-        self.table = ttk.Treeview(table_container,
-                                xscrollcommand=x_scroll.set,
-                                yscrollcommand=y_scroll.set,
-                                height=15)
-        self.table.pack(side='left', fill='both', expand=True)
-        x_scroll.config(command=self.table.xview)
-        y_scroll.config(command=self.table.yview)
+        # Create a canvas and scrollbar
+        canvas = tk.Canvas(scroll_frame, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(scroll_frame, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas)
         
-        # Key Results goes at the bottom
-        results_frame = ttk.LabelFrame(center_container, text="Key Results", padding=(10,5,10,10))
-        results_frame.pack(fill='x', pady=(10,0))
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(
+                scrollregion=canvas.bbox("all")
+            )
+        )
         
-        ttk.Label(results_frame, text="Extremum (Original Scale):", 
-                 font=(self.label_font.cget("family"), self.label_font.cget("size"), tkFont.BOLD)
-                ).grid(row=0, column=0, columnspan=2, sticky='w', pady=(0,8))
-
-        ttk.Label(results_frame, text="Factors:").grid(row=1, column=0, sticky='w', padx=(0,10))
-        self.factors_text = tk.Text(results_frame, height=1, wrap=tk.NONE, state='disabled', 
-                                  font=self.text_widget_font, relief=tk.SOLID, borderwidth=1, padx=5)
-        self.factors_text.grid(row=1, column=1, sticky='ew', pady=3)
-
-        ttk.Label(results_frame, text="Value:").grid(row=2, column=0, sticky='w', padx=(0,10))
-        self.value_text = tk.Text(results_frame, height=1, wrap=tk.NONE, state='disabled', 
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        # Pack the canvas and scrollbar
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # Factor selection frame
+        factor_frame = ttk.LabelFrame(scrollable_frame, text="Select Factors to Include", padding=10)
+        factor_frame.pack(fill='x', pady=(0,10))
+        
+        self.factor_selection_frame = ttk.Frame(factor_frame, style="App.TFrame")
+        self.factor_selection_frame.pack(fill='both', expand=True)
+        
+        # Initialize selection dictionary
+        self.factor_checkboxes = {}
+        self.factor_selection = {}
+        
+        # Add a label for the factor and result selection
+        ttk.Label(self.factor_selection_frame, text="Select factors and results to include in analysis:", 
+                font=self.label_font).grid(row=0, column=0, sticky='w', pady=(0,10))
+        
+        # Key Results Frame (keep this the same)
+        results_frame = ttk.LabelFrame(scrollable_frame, text="Key Results", padding=(10,5,10,10))
+        results_frame.pack(fill='x', pady=(10,0), expand=True)
+        
+        # Create a canvas and scrollbar for the results frame
+        results_canvas = tk.Canvas(results_frame, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(results_frame, orient="vertical", command=results_canvas.yview)
+        scrollable_results_frame = ttk.Frame(results_canvas)
+        
+        scrollable_results_frame.bind(
+            "<Configure>",
+            lambda e: results_canvas.configure(
+                scrollregion=results_canvas.bbox("all")
+            )
+        )
+        
+        results_canvas.create_window((0, 0), window=scrollable_results_frame, anchor="nw")
+        results_canvas.configure(yscrollcommand=scrollbar.set)
+        
+        # Pack the canvas and scrollbar
+        results_canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # Extremum section
+        extremum_frame = ttk.LabelFrame(scrollable_results_frame, text="Extremum (Original Scale)", padding=(10,5,10,10))
+        extremum_frame.pack(fill='x', pady=(0,10))
+        
+        # Individual results frame for comprehensive optimization
+        self.individual_results_frame = ttk.LabelFrame(scrollable_results_frame, text="Individual Results at Extremum", padding=(10,5,10,10))
+        self.individual_results_frame.pack(fill='x', pady=(0,10))
+        
+        # R² frame
+        self.r2_frame = ttk.LabelFrame(scrollable_results_frame, text="Model Fit (R²)", padding=(10,5,10,10))
+        self.r2_frame.pack(fill='x', pady=(0,10))
+        
+        # Initialize all text widgets (keep this the same)
+        self.factors_text = tk.Text(extremum_frame, height=1, wrap=tk.NONE, state='disabled',
                                 font=self.text_widget_font, relief=tk.SOLID, borderwidth=1, padx=5)
-        self.value_text.grid(row=2, column=1, sticky='ew', pady=3)
-
-        ttk.Label(results_frame, text="R² (Train):").grid(row=3, column=0, sticky='w', padx=(0,10))
-        self.r2_text = tk.Text(results_frame, height=1, wrap=tk.NONE, state='disabled', 
-                             font=self.text_widget_font, relief=tk.SOLID, borderwidth=1, padx=5)
-        self.r2_text.grid(row=3, column=1, sticky='ew', pady=3)
-        results_frame.columnconfigure(1, weight=1)
+        self.factors_text.grid(row=0, column=1, sticky='ew', pady=3)
+        
+        self.value_text = tk.Text(extremum_frame, height=1, wrap=tk.NONE, state='disabled',
+                                font=self.text_widget_font, relief=tk.SOLID, borderwidth=1, padx=5)
+        self.value_text.grid(row=1, column=1, sticky='ew', pady=3)
+        
+        # Initialize R² text widget
+        self.r2_text = tk.Text(self.r2_frame, height=1, wrap=tk.NONE, state='disabled',
+                            font=self.text_widget_font, relief=tk.SOLID, borderwidth=1, padx=5)
+        self.r2_text.pack(fill='x', padx=5, pady=5)
+        
+        # Configure grid weights
+        extremum_frame.columnconfigure(1, weight=1)
+        self.r2_frame.columnconfigure(0, weight=1)
 
 
         # === Right Panel Contents (PanedWindow) ===
@@ -379,322 +427,171 @@ class CSRApp:
                 self.pie_figures[i] = fig
                 self.pie_canvas[i] = canvas
                 self.pie_axes[i] = ax
-
-    def create_oacd_tab(self):
-        # Main container for OACD tab
-        oacd_frame = ttk.Frame(self.tab3, style="App.TFrame")
-        oacd_frame.pack(fill='both', expand=True, padx=10, pady=10)
-
-        # Split left (controls) and right (table display)
-        left_frame = ttk.Frame(oacd_frame, style="App.TFrame")
-        left_frame.pack(side='left', fill='y', padx=(0, 20), pady=5)
-        right_frame = ttk.Frame(oacd_frame, style="App.TFrame")
-        right_frame.pack(side='left', fill='both', expand=True, pady=5)
-
-        # --- OACD Logic ---
-        self.oacd = OACD()
-        self.oacd_factor_num = tk.IntVar(value=2)
-        self.oacd_table_size = tk.StringVar(value="Small")
-        self.oacd_extrenum_vars = []  # List of (min_var, max_var) for each factor
-        self.oacd_table = None
-
-        # --- Controls ---
-        ttk.Label(left_frame, text="Number of Factors:", font=self.label_font).pack(anchor='w', pady=(0,2))
-        factor_num_combo = ttk.Combobox(left_frame, textvariable=self.oacd_factor_num, state="readonly", font=self.entry_font, width=8)
-        factor_num_combo['values'] = list(range(2, 11))
-        factor_num_combo.pack(anchor='w', pady=(0,8))
-        factor_num_combo.bind('<<ComboboxSelected>>', lambda e: self._oacd_update_extrenum_table())
-
-        ttk.Label(left_frame, text="Table Size:", font=self.label_font).pack(anchor='w', pady=(0,2))
-        table_size_combo = ttk.Combobox(left_frame, textvariable=self.oacd_table_size, state="readonly", font=self.entry_font, width=8)
-        table_size_combo['values'] = ["Small", "Medium", "Large"]
-        table_size_combo.pack(anchor='w', pady=(0,8))
-
-        # --- Interactive Extrenum Table ---
-        extrenum_frame = ttk.LabelFrame(left_frame, text="Factor Min/Max (Extrenum)", padding=(8,6,8,8))
-        extrenum_frame.pack(fill='x', pady=(10,8))
-        self.oacd_extrenum_table_frame = ttk.Frame(extrenum_frame, style="App.TFrame")
-        self.oacd_extrenum_table_frame.pack(fill='x', expand=True)
-        self._oacd_update_extrenum_table()
-
-        # --- Set all min/max ---
-        set_all_frame = ttk.Frame(left_frame, style="App.TFrame")
-        set_all_frame.pack(fill='x', pady=(5,8))
-        ttk.Label(set_all_frame, text="Set all min:").pack(side='left')
-        self.oacd_set_all_min = tk.DoubleVar(value=0.0)
-        min_entry = ttk.Entry(set_all_frame, textvariable=self.oacd_set_all_min, width=7, font=self.entry_font)
-        min_entry.pack(side='left', padx=(2,8))
-        ttk.Button(set_all_frame, text="Apply", command=self._oacd_apply_all_min, width=6).pack(side='left')
-        ttk.Label(set_all_frame, text="Set all max:").pack(side='left', padx=(10,0))
-        self.oacd_set_all_max = tk.DoubleVar(value=0.0)
-        max_entry = ttk.Entry(set_all_frame, textvariable=self.oacd_set_all_max, width=7, font=self.entry_font)
-        max_entry.pack(side='left', padx=(2,8))
-        ttk.Button(set_all_frame, text="Apply", command=self._oacd_apply_all_max, width=6).pack(side='left')
-
-        # --- Max Nonzero Controls ---
-        max_nonzero_frame = ttk.Frame(left_frame, style="App.TFrame")
-        max_nonzero_frame.pack(fill='x', pady=(5,8))
-        ttk.Label(max_nonzero_frame, text="Max Nonzero Factors:").pack(side='left')
-        self.oacd_max_nonzero_var = tk.IntVar(value=0)
-        max_nonzero_entry = ttk.Entry(max_nonzero_frame, textvariable=self.oacd_max_nonzero_var, width=7, font=self.entry_font)
-        max_nonzero_entry.pack(side='left', padx=(2,8))
-        ttk.Button(max_nonzero_frame, text="Apply", command=self._oacd_apply_max_nonzero, width=8).pack(side='left')
-
-        # --- Generate and Export Buttons ---
-        button_frame = ttk.Frame(left_frame, style="App.TFrame")
-        button_frame.pack(fill='x', pady=(15,5))
-        ttk.Button(button_frame, text="Import Extrenum from Excel", command=self._oacd_import_extrenum).pack(fill='x', pady=(0,8))
-        ttk.Button(button_frame, text="Generate OACD Table", command=self._oacd_generate_table, style="Accent.TButton").pack(fill='x', pady=(0,8))
-        ttk.Button(button_frame, text="Export as Excel", command=self._oacd_export_table).pack(fill='x', pady=(0,8))
-        
-        # --- OACD Table Display ---
-        table_disp_frame = ttk.LabelFrame(right_frame, text="Generated OACD Table", padding=(8,6,8,8))
-        table_disp_frame.pack(fill='both', expand=True)
-        x_scroll = ttk.Scrollbar(table_disp_frame, orient='horizontal')
-        x_scroll.pack(side='bottom', fill='x')
-        y_scroll = ttk.Scrollbar(table_disp_frame, orient='vertical')
-        y_scroll.pack(side='right', fill='y')
-        self.oacd_table_tree = ttk.Treeview(table_disp_frame, show='headings', xscrollcommand=x_scroll.set, yscrollcommand=y_scroll.set, height=15)
-        self.oacd_table_tree.pack(fill='both', expand=True)
-        x_scroll.config(command=self.oacd_table_tree.xview)
-        y_scroll.config(command=self.oacd_table_tree.yview)
-
-    def _oacd_update_extrenum_table(self):
-        # Clear previous widgets
-        for widget in self.oacd_extrenum_table_frame.winfo_children():
-            widget.destroy()
-        self.oacd_extrenum_vars = []
-        n = self.oacd_factor_num.get() if hasattr(self, 'oacd_factor_num') else 2
-        # Header
-        ttk.Label(self.oacd_extrenum_table_frame, text="Factor", width=8).grid(row=0, column=0, padx=2, pady=2)
-        ttk.Label(self.oacd_extrenum_table_frame, text="Min", width=8).grid(row=0, column=1, padx=2, pady=2)
-        ttk.Label(self.oacd_extrenum_table_frame, text="Max", width=8).grid(row=0, column=2, padx=2, pady=2)
-        for i in range(n):
-            ttk.Label(self.oacd_extrenum_table_frame, text=f"F{i+1}", width=8).grid(row=i+1, column=0, padx=2, pady=2)
-            min_var = tk.DoubleVar(value=0.0)
-            max_var = tk.DoubleVar(value=0.0)
-            min_entry = ttk.Entry(self.oacd_extrenum_table_frame, textvariable=min_var, width=8, font=self.entry_font)
-            max_entry = ttk.Entry(self.oacd_extrenum_table_frame, textvariable=max_var, width=8, font=self.entry_font)
-            min_entry.grid(row=i+1, column=1, padx=2, pady=2)
-            max_entry.grid(row=i+1, column=2, padx=2, pady=2)
-            self.oacd_extrenum_vars.append((min_var, max_var))
-
-    def _oacd_apply_all_min(self):
-        for min_var, _ in self.oacd_extrenum_vars:
-            min_var.set(self.oacd_set_all_min.get())
-
-    def _oacd_apply_all_max(self):
-        for _, max_var in self.oacd_extrenum_vars:
-            max_var.set(self.oacd_set_all_max.get())
-
-    def _oacd_apply_max_nonzero(self):
-        value = self.oacd_max_nonzero_var.get()
-        if value <= 0:
-            tk.messagebox.showwarning("Invalid Value", "Please enter a positive integer for max nonzero factors.")
-            return
-        self.oacd.max_nonzero = value
-        self.oacd.reduce_levels()
-        self._oacd_display_table()
-
-    def _oacd_generate_table(self):
-        # Set up OACD object
-        n = self.oacd_factor_num.get()
-        self.oacd.set_factor_num(n)
-        self.oacd.set_table_size(self.oacd_table_size.get())
-        # Build extrenum DataFrame from UI
-        extrenum = np.zeros((n,2))
-        for i, (min_var, max_var) in enumerate(self.oacd_extrenum_vars):
-            extrenum[i,0] = min_var.get()
-            extrenum[i,1] = max_var.get()
-        self.oacd.set_factor_extrenum(pd.DataFrame(extrenum))
-        result = self.oacd.build_table()
-        print(self.oacd.table)
-        if result != 1:
-            messagebox.showerror("Error", "Failed to build OACD table. Check factor number and table size.")
-            return
-        self._oacd_display_table()
-
-    def _oacd_display_table(self):
-        # Clear previous
-        for col in self.oacd_table_tree.get_children():
-            self.oacd_table_tree.delete(col)
-        columns = ["Run"] + [f"F{i+1}" for i in range(self.oacd.table.shape[1])]
-        self.oacd_table_tree['columns'] = columns
-        for i, col in enumerate(columns):
-            self.oacd_table_tree.heading(col, text=col)
-            self.oacd_table_tree.column(col, width=80, anchor='center')
-        for idx, row in self.oacd.table.iterrows():
-            values = [str(idx+1)] + [f"{x:.4f}" for x in row.values]
-            self.oacd_table_tree.insert('', 'end', values=values)
-
-    def _oacd_export_table(self):
-        if self.oacd.table is None:
-            messagebox.showwarning("No Table", "Please generate the OACD table first.")
-            return
-        file_path = filedialog.asksaveasfilename(defaultextension='.xlsx', filetypes=[("Excel files", "*.xlsx")], title="Save OACD Table As")
-        if not file_path:
-            return
-        try:
-            self.oacd.table.to_excel(file_path, index=False)
-            messagebox.showinfo("Exported", f"OACD table exported to:\n{file_path}")
-        except Exception as e:
-            messagebox.showerror("Export Error", f"Failed to export table:\n{str(e)}")
+                
+    def clear_state(self):
+        self.clear_results_and_plots()
+        self.coefficients = None
+        self.bits_array = None
+        self.X = None
+        self.X_original_scale = None
+        self.y = None
+        self.y_pred = None
+        self.extremum_point = None
+        if hasattr(self, 'result_functions'):
+            del self.result_functions
+        if hasattr(self, 'comprehensive_function'):
+            del self.comprehensive_function
 
     def select_file(self):
-        file_path = filedialog.askopenfilename(filetypes=[("Excel files", "*.xlsx *.xls")])
-        if not file_path:
-            return
-
         try:
+            file_path = filedialog.askopenfilename(filetypes=[("Excel files", "*.xlsx *.xls")])
+            if not file_path:
+                return
+
+            # Clear previous state completely
+            self.clear_state()
+
+            # Rest of the method remains the same...
             self.df = pd.read_excel(file_path, header=0)
-            self.original_col_names = list(self.df.columns)
-
-            n_cols = len(self.df.columns)
-            if n_cols < 2:
-                raise ValueError("Data must have at least two columns (one factor, one result).")
-
-            new_col_names = [f"factor{i+1}" for i in range(n_cols-1)] + ["result"]
-            self.col_name_mapping_display = dict(zip(self.original_col_names, new_col_names))
-            self.col_name_mapping = dict(zip(new_col_names, self.original_col_names))
-
-            self.df.columns = new_col_names
-
             if self.df.empty:
-                raise ValueError("No data found in the file")
+                raise ValueError("The file is empty")
 
+            self.original_col_names = list(self.df.columns)
+            if len(self.original_col_names) < 2:
+                raise ValueError("Data must have at least 2 columns (factors + result)")
+
+            # Create mapping
+            self.col_name_mapping = {
+                f"factor{i+1}": name 
+                for i, name in enumerate(self.original_col_names[:-1])
+            }
+            self.col_name_mapping["result"] = self.original_col_names[-1]
+
+            # Rename columns
+            new_cols = list(self.col_name_mapping.keys())
+            self.df.columns = new_cols
+
+            # Process data
             self.df = self.df.apply(pd.to_numeric, errors='coerce').dropna()
             if self.df.empty:
-                raise ValueError("No numeric data left after cleaning. Check file for non-numeric values.")
+                raise ValueError("No valid numeric data found")
 
-
-            self.df["residual"] = 0.0
-            self.factor_cols = [col for col in self.df.columns if col.startswith('factor')]
+            self.factor_cols = [col for col in new_cols if col.startswith('factor')]
             self.X_original_scale = self.df[self.factor_cols].values
             self.x_min_orig = self.X_original_scale.min(axis=0)
             self.x_max_orig = self.X_original_scale.max(axis=0)
 
-
+            # Update UI
             self.project_name_entry.delete(0, tk.END)
-            self.project_name_entry.insert(0, file_path.split('/')[-1])
+            self.project_name_entry.insert(0, os.path.basename(file_path))
             self.update_table_view()
-
-            self.coefficients = None
-            self.extremum_point = None
-            self.X = None
-            self.y = None
-            self.y_pred = None
-            self.norm_x_min = None
-            self.norm_x_max = None
-
-            self.clear_results_and_plots()
 
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load file:\n{str(e)}")
-            self.df = None
             self.clear_results_and_plots()
 
-    def clear_results_and_plots(self):
-        for fig_key in self.pie_figures:
-             if fig_key in self.pie_axes:
-                self.pie_axes[fig_key].cla()
-                self.pie_figures[fig_key].subplots_adjust(left=0.05, right=0.50, top=0.92, bottom=0.08)
-                self.pie_figures[fig_key].patch.set_facecolor('#F0F0F0')
-                self.pie_axes[fig_key].set_facecolor('#FFFFFF')
-                self.pie_axes[fig_key].text(0.5, 0.5, 'Load data and run fitting', ha='center', va='center', fontsize=9, color='gray')
-                for spine in self.pie_axes[fig_key].spines.values(): spine.set_visible(False)
-                self.pie_axes[fig_key].set_xticks([])
-                self.pie_axes[fig_key].set_yticks([])
-                self.pie_canvas[fig_key].draw()
-
-        if hasattr(self, 'figure1') and self.figure1:
-            self.figure1.clf()
-            self.figure1.subplots_adjust(bottom=0.18, left=0.18, top=0.9, right=0.95)
-            self.figure1.patch.set_facecolor('#F0F0F0')
-            ax1_clear = self.figure1.add_subplot(111, facecolor="#FFFFFF")
-            ax1_clear.text(0.5, 0.5, "Load data and run fitting", ha="center", va="center", color='gray')
-            for spine in ax1_clear.spines.values(): spine.set_edgecolor('gray')
-            self.canvas1.draw()
-
-        if hasattr(self, 'figure2') and self.figure2:
-            self.figure2.clf()
-            self.figure2.subplots_adjust(bottom=0.18, left=0.1, right=0.85, top=0.9)
-            self.figure2.patch.set_facecolor('#F0F0F0')
-            ax2_clear = self.figure2.add_subplot(111, facecolor="#FFFFFF") # For 2D placeholder
-            # If you want 3D placeholder: ax2_clear = self.figure2.add_subplot(111, projection='3d', facecolor="#FFFFFF")
-            ax2_clear.text(0.5, 0.5, "Load data and run fitting", ha="center", va="center", color='gray')
-            for spine in ax2_clear.spines.values(): spine.set_edgecolor('gray')
-            if hasattr(ax2_clear, 'zaxis'): # If 3D
-                 ax2_clear.xaxis.set_pane_color((1.0, 1.0, 1.0, 0.0))
-                 ax2_clear.yaxis.set_pane_color((1.0, 1.0, 1.0, 0.0))
-                 ax2_clear.zaxis.set_pane_color((1.0, 1.0, 1.0, 0.0))
-            self.canvas2.draw()
-
-
-        if hasattr(self, 'equation_text'):
-            self.equation_text.config(state='normal')
-            self.equation_text.delete(1.0, tk.END)
-            self.equation_text.config(state='disabled')
-
-        # Clear new factor definitions text
-        if hasattr(self, 'factor_definitions_text'):
-            self.factor_definitions_text.config(state='normal')
-            self.factor_definitions_text.delete(1.0, tk.END)
-            self.factor_definitions_text.config(state='disabled')
-
-
-        for txt_widget_attr in ['factors_text', 'value_text', 'r2_text']:
-            if hasattr(self, txt_widget_attr):
-                widget = getattr(self, txt_widget_attr)
-                widget.config(state='normal')
-                widget.delete(1.0, tk.END)
-                widget.config(state='disabled')
-
-        if hasattr(self, 'x_factor_combo'): self.x_factor_combo.set('')
-        if hasattr(self, 'y_factor_combo'): self.y_factor_combo.set('')
-        if hasattr(self, 'x_factor_combo'): self.x_factor_combo['values'] = []
-        if hasattr(self, 'y_factor_combo'): self.y_factor_combo['values'] = []
-
     def update_table_view(self):
-        self.table.delete(*self.table.get_children())
+        # Clear existing checkboxes
+        for widget in self.factor_selection_frame.winfo_children():
+            widget.destroy()
+        
+        self.factor_checkboxes = {}
+        self.factor_selection = {}
+        
         if self.df is None or self.df.empty:
             return
+        
+        # Get all column names in order
+        all_columns = list(self.df.columns)
+        
+        # Add combobox for all features
+        cb_options = ["factor", "result", "ignore"]
+        
+        for i, col in enumerate(all_columns):
+            display_name = self.col_name_mapping.get(col, col)
+            
+            # Create frame for this factor's controls
+            lbl_frame = ttk.Frame(self.factor_selection_frame, style="App.TFrame")
+            cb_frame = ttk.Frame(self.factor_selection_frame, style="App.TFrame")
+            cb_frame.pack(fill='x', pady=2)
+            
+            # Add checkbox - only check the last box by default
+            # var = tk.BooleanVar(value=(i == len(all_columns)-1))  # True for last column
+            # dd = ttk.Checkbutton(dd_frame, variable=var, text=display_name)
+            var = tk.StringVar(value="result" if i == len(all_columns)-1 else "factor")
+            lbl = ttk.Label(cb_frame, text=display_name)
+            lbl.pack(side='left', padx=(0,10))
+            cb = ttk.Combobox(cb_frame, value=cb_options, textvariable=var)
+            cb.set(var.get())
+            cb.pack(side='left', padx=(0,10))
+            self.factor_checkboxes[col] = var
 
-        original_factor_names_ordered = []
-        if self.factor_cols: # Ensure factor_cols has been populated
-            original_factor_names_ordered = [self.col_name_mapping.get(fc, fc) for fc in self.factor_cols]
+    def clear_results_and_plots(self):
+        # Clear text widgets safely
+        text_widgets = [
+            'equation_text', 
+            'factor_definitions_text',
+            'factors_text', 
+            'value_text', 
+            'r2_text'
+        ]
+        
+        for widget_name in text_widgets:
+            if hasattr(self, widget_name):
+                widget = getattr(self, widget_name)
+                try:
+                    widget.config(state='normal')
+                    widget.delete(1.0, tk.END)
+                    widget.config(state='disabled')
+                except tk.TclError:
+                    pass  # Widget might not exist anymore
 
-        internal_factor_names_ordered = self.factor_cols
+        # Clear individual results frame if it exists
+        if hasattr(self, 'individual_results_frame'):
+            try:
+                for widget in self.individual_results_frame.winfo_children():
+                    widget.destroy()
+            except tk.TclError:
+                pass
 
-        display_headers = original_factor_names_ordered[:] # Make a copy
-        internal_column_ids = internal_factor_names_ordered[:]
+        # Clear R² frame if it exists
+        if hasattr(self, 'r2_frame'):
+            try:
+                for widget in self.r2_frame.winfo_children():
+                    widget.destroy()
+            except tk.TclError:
+                pass
 
-        if "result" in self.df.columns:
-            original_result_name = self.col_name_mapping.get("result", "Result")
-            display_headers.append(original_result_name)
-            internal_column_ids.append("result")
-
-        if "residual" in self.df.columns:
-            display_headers.append("Residual")
-            internal_column_ids.append("residual")
-
-
-        self.table["columns"] = internal_column_ids
-        self.table.column("#0", width=0, stretch=tk.NO)
-
-        heading_font = tkFont.Font(font=self.style.lookup("Treeview.Heading", "font"))
-
-        for internal_id, display_name in zip(internal_column_ids, display_headers):
-            col_width = heading_font.measure(display_name) + 25 # Measure with heading font
-            self.table.heading(internal_id, text=display_name)
-            self.table.column(internal_id, width=max(100, col_width), anchor='center', stretch=tk.YES)
-
-        for _, row_data in self.df.iterrows():
-            ordered_row_values = [row_data[internal_id] for internal_id in internal_column_ids]
-            formatted_values = [
-                f"{x:.4f}" if isinstance(x, (float, np.floating)) else str(x)
-                for x in ordered_row_values
-            ]
-            self.table.insert("", "end", values=formatted_values)
+        # Clear plots
+        if hasattr(self, 'figure1'):
+            try:
+                self.figure1.clf()
+                ax = self.figure1.add_subplot(111, facecolor='white')
+                ax.text(0.5, 0.5, "Load data and run fitting", 
+                       ha="center", va="center", color='gray')
+                self.canvas1.draw()
+            except:
+                pass
+                
+        if hasattr(self, 'figure2'):
+            try:
+                self.figure2.clf()
+                ax = self.figure2.add_subplot(111, facecolor='white')
+                ax.text(0.5, 0.5, "Load data and run fitting", 
+                       ha="center", va="center", color='gray')
+                self.canvas2.draw()
+            except:
+                pass
+        
+        # Clear combo boxes
+        for combo_name in ['x_factor_combo', 'y_factor_combo']:
+            if hasattr(self, combo_name):
+                try:
+                    combo = getattr(self, combo_name)
+                    combo.set('')
+                    combo['values'] = []
+                except tk.TclError:
+                    pass
 
     def update_max_iter_value(self, value_str):
         try:
@@ -721,21 +618,82 @@ class CSRApp:
             self.alpha_value_label.config(text="1.00")
 
     def run_fitting(self):
-        if self.df is None:
-            messagebox.showerror("Error", "Please load data first.")
-            return
-
         try:
-            self.factor_cols = [col for col in self.df.columns if col.startswith('factor')]
-            if not self.factor_cols:
-                messagebox.showerror("Error", "No factor columns found. Ensure data is loaded and columns are named like 'factor1', 'factor2', etc., before result column.")
-                return
+            self.clear_state()
+            
+            if self.df is None:
+                raise ValueError("Please load data first.")
+                
+            # Store current checkbox states before updating
+            current_states = {}
+            if hasattr(self, 'factor_checkboxes'):
+                current_states = {col: var.get() for col, var in self.factor_checkboxes.items()}
+                
+            # Get selected columns - use current_states if available, otherwise default to last column
+            # TODO Update for factor vs result columns
+            if current_states:
+                self.result_cols = [col for col, state in current_states.items() 
+                                  if state == "result" and col != "residual"]
+                self.factor_cols = [col for col, state in current_states.items() if state == "factor" and col != "residual"]
+            else:
+                # Default to just the result column if no checkboxes exist yet
+                self.result_cols = ["result"]
+            
+            if not self.result_cols:
+                raise ValueError("Please select at least one result factor.")
 
-            X_fit = self.df[self.factor_cols].values.copy()
+            if len(self.result_cols) == 1:
+                self._run_single_result_fitting(self.result_cols[0])
+            else:
+                self._run_comprehensive_fitting()
+                
+            # Update table view while preserving checkbox states
+            self.update_table_view()
+            
+            # Restore checkbox states
+            if hasattr(self, 'factor_checkboxes'):
+                for col, var in self.factor_checkboxes.items():
+                    if col in current_states:
+                        var.set(current_states[col])
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Fitting failed: {str(e)}")
+            self.coefficients = None
+            self.extremum_point = None
+            self.clear_results_and_plots()
+
+    def _run_single_result_fitting(self, result_col):
+        """Handle fitting for a single result column (original behavior)"""
+        try:
+            # Clear any previous model state
+            self.coefficients = None
+            self.bits_array = None
+            self.y_pred = None
+
+            # Ensure we're working with the correct columns
+            working_cols = [col for col in self.df.columns 
+                           if (col.startswith('factor') and col in self.factor_cols) or col == result_col]
+            
+            # Create a working dataframe with just the needed columns
+            working_df = self.df[working_cols].copy()
+            
+            # Rename the result column to 'result' for consistency
+            if result_col != 'result':
+                working_df = working_df.rename(columns={result_col: 'result'})
+            
+            self.factor_cols = [col for col in working_df.columns if col.startswith('factor')]
+            X_fit = working_df[self.factor_cols].values.copy()
             self.X_original_scale = X_fit.copy()
-            self.y = self.df['result'].values
+            self.y = working_df['result'].values
             n_factors = X_fit.shape[1]
 
+            # Generate fresh bits array based on current number of factors
+            self.bits_array = self.generate_bits_array(n_factors)
+            if self.bits_array.size == 0:
+                messagebox.showerror("Error", "Could not generate terms matrix (bits_array).")
+                return
+
+            # Rest of the method remains the same...
             self.norm_x_min = None
             self.norm_x_max = None
 
@@ -755,41 +713,26 @@ class CSRApp:
 
             self.X = X_fit
 
-            self.bits_array = self.generate_bits_array(n_factors)
-            if self.bits_array.size == 0:
-                messagebox.showerror("Error", "Could not generate terms matrix (bits_array). This might happen if n_factors is 0.")
-                return
-
             X_design = self.create_design_matrix(self.X, self.bits_array)
             if X_design.shape[1] == 0:
-                 messagebox.showerror("Error", "Design matrix has no terms. Check factor count and bits_array generation logic.")
-                 return
+                messagebox.showerror("Error", "Design matrix has no terms.")
+                return
 
             alpha_val = 10 ** float(self.alpha_slider.get())
 
-            # Modified Ridge regression setup
             model = Ridge(alpha=alpha_val, max_iter=None, tol=1e-4, fit_intercept=False, random_state=42)
-            try:
-                model.fit(X_design, self.y)
-                self.coefficients = model.coef_
+            model.fit(X_design, self.y)
+            self.coefficients = model.coef_
 
-                # Check for convergence
-                if model.n_iter_ is not None and model.n_iter_ >= model.max_iter:  # Check if max_iter was reached (default is 1000)
-                     messagebox.showwarning("Convergence Warning",
-                                         "Ridge regression may not have fully converged. Results may be suboptimal.\n"
-                                         "Consider adjusting alpha or checking your data.")
-
-
-            except Exception as e:
-                messagebox.showerror("Fitting Error", f"Regression failed:\n{str(e)}")
-                self.coefficients = None
-                self.extremum_point = None
-                self.clear_results_and_plots()
-                return
+            if model.n_iter_ is not None and model.n_iter_ >= model.max_iter:
+                messagebox.showwarning("Convergence Warning",
+                                     "Ridge regression may not have fully converged. Results may be suboptimal.\n"
+                                     "Consider adjusting alpha or checking your data.")
 
             self.y_pred = model.predict(X_design)
             residuals = self.y - self.y_pred
-            self.df['residual'] = residuals
+            self.df['residual'] = 0.0  # Initialize/reset residual column
+            self.df.loc[working_df.index, 'residual'] = residuals  # Only update residuals for the rows we used
             train_r2 = model.score(X_design, self.y)
 
             if norm_type == "[-1, 1]":
@@ -807,13 +750,53 @@ class CSRApp:
                                                bounds_opt, x0_opt, extremum_type_str, self.X)
 
             self.extremum_point = extremum_result_in_fitting_space
+            
+            # Generate equation and definitions
+            equation_str, function_defs_str, factor_defs_str = self.generate_equation_and_definitions(
+                self.coefficients, self.bits_array, n_factors)
 
-            # Split the equation and definitions for the two new frames
-            equation_str, function_defs_str, factor_defs_str = self.generate_equation_and_definitions(self.coefficients, self.bits_array, n_factors)
+            # Clear individual results frame for single optimization
+            if hasattr(self, 'individual_results_frame'):
+                for widget in self.individual_results_frame.winfo_children():
+                    widget.destroy()
+            
+            # Clear R² frame for single optimization
+            if hasattr(self, 'r2_frame'):
+                for widget in self.r2_frame.winfo_children():
+                    widget.destroy()
+                
+                # Create a simple frame for R² display
+                r2_frame = ttk.Frame(self.r2_frame)
+                r2_frame.pack(fill='x', pady=(0,5))
+                
+                ttk.Label(r2_frame, text="R²:", font=self.label_font).grid(row=0, column=0, sticky='w')
+                
+                r2_text = tk.Text(r2_frame, height=1, width=15, wrap=tk.NONE, state='disabled',
+                                font=self.text_widget_font, relief=tk.SOLID, borderwidth=1, padx=5)
+                r2_text.grid(row=0, column=1, padx=(5,0), sticky='w')
+                r2_text.config(state='normal')
+                r2_text.insert(tk.END, f"{train_r2:.4f}")
+                r2_text.config(state='disabled')
+                
+                # Add interpretation
+                interpretation = ""
+                if train_r2 >= 0.9:
+                    interpretation = "Excellent fit"
+                elif train_r2 >= 0.7:
+                    interpretation = "Good fit"
+                elif train_r2 >= 0.5:
+                    interpretation = "Moderate fit"
+                else:
+                    interpretation = "Poor fit"
+                
+                interp_text = tk.Text(r2_frame, height=1, width=20, wrap=tk.NONE, state='disabled',
+                                    font=self.text_widget_font, relief=tk.SOLID, borderwidth=1, padx=5)
+                interp_text.grid(row=0, column=2, padx=(5,0), sticky='w')
+                interp_text.config(state='normal')
+                interp_text.insert(tk.END, interpretation)
+                interp_text.config(state='disabled')
 
             self.update_results_display(equation_str, function_defs_str, factor_defs_str, train_r2)
-            self.update_table_view()
-
             display_factor_names = [self.col_name_mapping.get(f, f) for f in self.factor_cols]
             self.x_factor_combo['values'] = display_factor_names
             self.y_factor_combo['values'] = display_factor_names
@@ -822,22 +805,309 @@ class CSRApp:
                 self.y_factor_combo.current(min(1, len(display_factor_names)-1))
 
             self.plot_results(n_factors, 0, min(1, n_factors -1) if n_factors > 1 else 0)
-            self.update_coefficient_pie_charts() # This also updates the factor defs in tab2
+            self.update_coefficient_pie_charts()
 
         except Exception as e:
-            messagebox.showerror("Error", f"Fitting failed: {str(e)}\n\nCheck data format and parameters.")
-            self.coefficients = None
-            self.extremum_point = None
-            self.clear_results_and_plots()
+            raise Exception(f"Single result fitting failed: {str(e)}")
 
-    # Updated: Modified update_results_display to handle two text widgets
+    def _run_comprehensive_fitting(self):
+        """Handle fitting for multiple result columns (comprehensive optimization)"""
+        try:
+            self.X_original_scale = self.df[self.factor_cols].values
+            # First fit individual CSR functions for each result
+            self.result_functions = {}
+            result_min_max = {}
+            
+            # Initialize residuals column
+            self.df['residual'] = 0.0
+            
+            for result_col in self.result_cols:
+                # Create temporary df with this result column
+                temp_df = self.df[self.factor_cols + [result_col]].copy()
+                temp_df.columns = [f"factor{i+1}" for i in range(len(self.factor_cols))] + ["result"]
+                
+                # Store min/max for normalization
+                result_min_max[result_col] = {
+                    'min': temp_df['result'].min(),
+                    'max': temp_df['result'].max()
+                }
+                
+                # Fit CSR for this result
+                X_fit = temp_df[[f for f in temp_df.columns if f.startswith('factor')]].values
+                y_fit = temp_df['result'].values
+                
+                # Normalize if selected
+                norm_type = self.norm_select.get()
+                x_min = X_fit.min(axis=0)
+                x_max = X_fit.max(axis=0)
+                
+                if norm_type == "[-1, 1]":
+                    range_val = x_max - x_min
+                    range_val[range_val == 0] = 1
+                    X_fit = 2 * (X_fit - x_min) / range_val - 1
+                elif norm_type == "[0, 1]":
+                    range_val = x_max - x_min
+                    range_val[range_val == 0] = 1
+                    X_fit = (X_fit - x_min) / range_val
+                
+                # Generate bits array and design matrix
+                n_factors = X_fit.shape[1]
+                bits_array = self.generate_bits_array(n_factors)
+                X_design = self.create_design_matrix(X_fit, bits_array)
+                
+                # Fit model
+                alpha_val = 10 ** float(self.alpha_slider.get())
+                model = Ridge(alpha=alpha_val, fit_intercept=False)
+                model.fit(X_design, y_fit)
+                
+                # Calculate predictions and residuals
+                y_pred = model.predict(X_design)
+                residuals = y_fit - y_pred
+                
+                # Store the function and update residuals
+                self.result_functions[result_col] = {
+                    'coefficients': model.coef_,
+                    'bits_array': bits_array,
+                    'x_min': x_min if norm_type != "None" else None,
+                    'x_max': x_max if norm_type != "None" else None,
+                    'norm_type': norm_type,
+                    'model': model,
+                    'X_design': X_design,
+                    'y': y_fit,
+                    'y_pred': y_pred,
+                    'residuals': residuals,
+                    'min_val': result_min_max[result_col]['min'],
+                    'max_val': result_min_max[result_col]['max']
+                }
+                
+                # Add residuals to main dataframe (average if multiple results)
+                self.df['residual'] += residuals / len(self.result_cols)
+            
+            # Create comprehensive function
+            def comprehensive_func(x):
+                total = 0
+                for result_col, func_data in self.result_functions.items():
+                    # Evaluate individual function
+                    if func_data['norm_type'] == "[-1, 1]":
+                        x_norm = 2 * (x - func_data['x_min']) / (func_data['x_max'] - func_data['x_min']) - 1
+                    elif func_data['norm_type'] == "[0, 1]":
+                        x_norm = (x - func_data['x_min']) / (func_data['x_max'] - func_data['x_min'])
+                    else:
+                        x_norm = x
+                        
+                    design_row = self.create_design_matrix(x_norm.reshape(1, -1), func_data['bits_array'])
+                    val = np.dot(design_row[0], func_data['coefficients'])
+                    
+                    # Normalize and add to total
+                    norm_val = (val - func_data['min_val']) / (func_data['max_val'] - func_data['min_val'])
+                    total += norm_val
+                return total
+            
+            self.comprehensive_function = comprehensive_func
+            
+            # Find extremum of comprehensive function - use original scale bounds
+            n_factors = len(self.factor_cols)
+            norm_type = self.norm_select.get()
+            
+            # Set bounds in original scale regardless of normalization
+            bounds_opt = [(self.df[col].min(), self.df[col].max()) for col in self.factor_cols]
+            x0_opt = np.array([(min_val + max_val)/2 for min_val, max_val in bounds_opt])
+            
+            extremum_type_str = self.weight_combo.get().lower().replace(" ", "_")
+            self.extremum_point = self.find_extremum_comprehensive(bounds_opt, x0_opt, extremum_type_str)
+            
+            # Update displays
+            self.update_comprehensive_results_display(result_min_max)
+            
+            # Set up factor combos for plotting
+            display_factor_names = [self.col_name_mapping.get(f, f) for f in self.factor_cols]
+            self.x_factor_combo['values'] = display_factor_names
+            self.y_factor_combo['values'] = display_factor_names
+            if display_factor_names:
+                self.x_factor_combo.current(0)
+                self.y_factor_combo.current(min(1, len(display_factor_names)-1))
+            
+            # Update the table view with the new data
+            self.update_table_view()
+            
+            self.plot_results(n_factors)
+
+        except Exception as e:
+            raise Exception(f"Comprehensive fitting failed: {str(e)}")
+
     def update_results_display(self, equation_str, function_defs_str, factor_defs_str, train_r2):
+        """Update all the display widgets with the fitting results"""
+        
+        # Update Equation Text
+        if hasattr(self, 'equation_text'):
+            try:
+                self.equation_text.config(state='normal')
+                self.equation_text.delete(1.0, tk.END)
+                self.equation_text.insert(tk.END, equation_str)
+                self.equation_text.config(state='disabled')
+            except tk.TclError as e:
+                print(f"Error updating equation text: {e}")
+
+        # Update Factor Definitions Text
+        if hasattr(self, 'factor_definitions_text'):
+            try:
+                self.factor_definitions_text.config(state='normal')
+                self.factor_definitions_text.delete(1.0, tk.END)
+                self.factor_definitions_text.insert(tk.END, factor_defs_str)
+                self.factor_definitions_text.config(state='disabled')
+            except tk.TclError as e:
+                print(f"Error updating factor definitions: {e}")
+
+        # Update Extremum Factors Display
+        if hasattr(self, 'factors_text'):
+            try:
+                self.factors_text.config(state='normal')
+                self.factors_text.delete(1.0, tk.END)
+                
+                if self.extremum_point and 'x' in self.extremum_point:
+                    if hasattr(self, 'comprehensive_function'):
+                        # For comprehensive optimization, extremum point is already in original scale
+                        extremum_x = self.extremum_point['x']
+                    else:
+                        # For single optimization, we need to unnormalize
+                        extremum_x = self._unnormalize_point(self.extremum_point['x'])
+                    
+                    if extremum_x is not None:
+                        self.factors_text.insert(tk.END, ", ".join([f"{val:.4f}" for val in extremum_x]))
+                
+                self.factors_text.config(state='disabled')
+            except tk.TclError as e:
+                print(f"Error updating factors text: {e}")
+
+        # Update Extremum Value Display
+        if hasattr(self, 'value_text'):
+            try:
+                self.value_text.config(state='normal')
+                self.value_text.delete(1.0, tk.END)
+                
+                if self.extremum_point and 'value' in self.extremum_point:
+                    self.value_text.insert(tk.END, f"{self.extremum_point['value']:.4f}")
+                
+                self.value_text.config(state='disabled')
+            except tk.TclError as e:
+                print(f"Error updating value text: {e}")
+            
+    def clear_results_and_plots(self):
+        # Clear text widgets safely
+        text_widgets = [
+            'equation_text', 
+            'factor_definitions_text',
+            'factors_text', 
+            'value_text', 
+            'r2_text'
+        ]
+        
+        for widget_name in text_widgets:
+            if hasattr(self, widget_name):
+                widget = getattr(self, widget_name)
+                try:
+                    widget.config(state='normal')
+                    widget.delete(1.0, tk.END)
+                    widget.config(state='disabled')
+                except tk.TclError:
+                    pass  # Widget might not exist anymore
+
+        # Clear individual results frame if it exists
+        if hasattr(self, 'individual_results_frame'):
+            try:
+                for widget in self.individual_results_frame.winfo_children():
+                    widget.destroy()
+            except tk.TclError:
+                pass
+
+        # Clear R² frame if it exists
+        if hasattr(self, 'r2_frame'):
+            try:
+                for widget in self.r2_frame.winfo_children():
+                    widget.destroy()
+            except tk.TclError:
+                pass
+
+        # Clear plots
+        if hasattr(self, 'figure1'):
+            try:
+                self.figure1.clf()
+                ax = self.figure1.add_subplot(111, facecolor='white')
+                ax.text(0.5, 0.5, "Load data and run fitting", 
+                       ha="center", va="center", color='gray')
+                self.canvas1.draw()
+            except:
+                pass
+                
+        if hasattr(self, 'figure2'):
+            try:
+                self.figure2.clf()
+                ax = self.figure2.add_subplot(111, facecolor='white')
+                ax.text(0.5, 0.5, "Load data and run fitting", 
+                       ha="center", va="center", color='gray')
+                self.canvas2.draw()
+            except:
+                pass
+        
+        # Clear combo boxes
+        for combo_name in ['x_factor_combo', 'y_factor_combo']:
+            if hasattr(self, combo_name):
+                try:
+                    combo = getattr(self, combo_name)
+                    combo.set('')
+                    combo['values'] = []
+                except tk.TclError:
+                    pass
+
+    def update_comprehensive_results_display(self, result_min_max):
+        """Update the display for comprehensive fitting results"""
+        # Clear previous widgets if they exist
+        if hasattr(self, 'individual_results_frame'):
+            try:
+                for widget in self.individual_results_frame.winfo_children():
+                    widget.destroy()
+            except tk.TclError:
+                pass
+        
+        if hasattr(self, 'r2_frame'):
+            try:
+                for widget in self.r2_frame.winfo_children():
+                    widget.destroy()
+            except tk.TclError:
+                pass
+
+        # Rest of the method remains the same...
+        # Generate equation string for each individual result
+        equation_parts = []
+        for result_col in self.result_functions:
+            # Get the CSR coefficients and bits array for this result
+            func_data = self.result_functions[result_col]
+            beta = func_data['coefficients']
+            bits_array = func_data['bits_array']
+            n_factors = bits_array.shape[1]
+            
+            # Generate the equation string for this result
+            eq_str = self._generate_single_result_equation(beta, bits_array, n_factors)
+            
+            # Add the normalization part
+            min_val = result_min_max[result_col]['min']
+            max_val = result_min_max[result_col]['max']
+            short_name = self.col_name_mapping.get(result_col, result_col)
+            equation_parts.append(f"({eq_str}-{min_val:.4f})/({max_val-min_val:.4f})")
+        
+        # Combine all equations
+        if not equation_parts:
+            equation_str = "Comprehensive CSR = (No results)"
+        else:
+            equation_str = "Comprehensive CSR = " + " + ".join(equation_parts)
+        
         # Update Equation Text
         self.equation_text.config(state='normal')
         self.equation_text.delete(1.0, tk.END)
         self.equation_text.insert(tk.END, equation_str)
         self.equation_text.config(state='disabled')
-
+        
+        # Update factor definitions
         factor_definitions = []
         if hasattr(self, 'factor_cols') and self.factor_cols:
             for i, factor in enumerate(self.factor_cols):
@@ -852,14 +1122,15 @@ class CSRApp:
         self.factor_definitions_text.insert(tk.END, factor_defs_str)
         self.factor_definitions_text.config(state='disabled')
         
-        # Rest of the method remains unchanged...
+        # Update extremum display - show real factor values
         self.factors_text.config(state='normal')
         self.factors_text.delete(1.0, tk.END)
         self.value_text.config(state='normal')
         self.value_text.delete(1.0, tk.END)
 
-        if self.extremum_point and 'x' in self.extremum_point and self.extremum_point['x'] is not None and len(self.extremum_point['x']) > 0:
-            extremum_x_original_scale = self._unnormalize_point(self.extremum_point['x'])
+        if self.extremum_point and 'x' in self.extremum_point and self.extremum_point['x'] is not None:
+            # For comprehensive optimization, extremum point is already in original scale
+            extremum_x_original_scale = self.extremum_point['x']
             if extremum_x_original_scale is not None and len(extremum_x_original_scale) > 0:
                 self.factors_text.insert(tk.END, ", ".join([f"{val:.4f}" for val in extremum_x_original_scale]))
             self.value_text.insert(tk.END, f"{self.extremum_point['value']:.4f}")
@@ -867,13 +1138,169 @@ class CSRApp:
         self.factors_text.config(state='disabled')
         self.value_text.config(state='disabled')
 
-        self.r2_text.config(state='normal')
-        self.r2_text.delete(1.0, tk.END)
-        self.r2_text.insert(tk.END, f"{train_r2:.4f}")
-        self.r2_text.config(state='disabled')
+        # Add individual results
+        if hasattr(self, 'result_functions'):
+            # Create a grid layout for individual results
+            row_num = 0
+            for result_col, func_data in self.result_functions.items():
+                display_name = self.col_name_mapping.get(result_col, result_col)
+                
+                # Result frame for each individual CSR
+                result_frame = ttk.Frame(self.individual_results_frame)
+                result_frame.grid(row=row_num, column=0, sticky='ew', pady=(0,5))
+                
+                # Display name label
+                ttk.Label(result_frame, text=f"{display_name}:", font=self.label_font).grid(row=0, column=0, sticky='w')
+                
+                # Calculate extremum value for this individual CSR
+                x_norm = None
+                if func_data['norm_type'] == "[-1, 1]":
+                    x_norm = 2 * (self.extremum_point['x'] - func_data['x_min']) / (func_data['x_max'] - func_data['x_min']) - 1
+                elif func_data['norm_type'] == "[0, 1]":
+                    x_norm = (self.extremum_point['x'] - func_data['x_min']) / (func_data['x_max'] - func_data['x_min'])
+                else:
+                    x_norm = self.extremum_point['x']
+                
+                design_row = self.create_design_matrix(x_norm.reshape(1, -1), func_data['bits_array'])
+                val = np.dot(design_row[0], func_data['coefficients'])
+                
+                # Value at extremum
+                val_text = tk.Text(result_frame, height=1, width=15, wrap=tk.NONE, state='disabled',
+                                 font=self.text_widget_font, relief=tk.SOLID, borderwidth=1, padx=5)
+                val_text.grid(row=0, column=1, padx=(5,15), sticky='w')
+                val_text.config(state='normal')
+                val_text.insert(tk.END, f"{val:.4f}")
+                val_text.config(state='disabled')
+                
+                row_num += 1
+            
+            # Add R² values in a similar grid layout
+            r2_row_num = 0
+            for result_col, func_data in self.result_functions.items():
+                display_name = self.col_name_mapping.get(result_col, result_col)
+                r2 = func_data['model'].score(func_data['X_design'], func_data['y'])
+                
+                r2_frame = ttk.Frame(self.r2_frame)
+                r2_frame.grid(row=r2_row_num, column=0, sticky='ew', pady=(0,5))
+                
+                ttk.Label(r2_frame, text=f"{display_name}:", font=self.label_font).grid(row=0, column=0, sticky='w')
+                
+                r2_text = tk.Text(r2_frame, height=1, width=15, wrap=tk.NONE, state='disabled',
+                                font=self.text_widget_font, relief=tk.SOLID, borderwidth=1, padx=5)
+                r2_text.grid(row=0, column=1, padx=(5,0), sticky='w')
+                r2_text.config(state='normal')
+                r2_text.insert(tk.END, f"{r2:.4f}")
+                r2_text.config(state='disabled')
+                
+                # Add interpretation
+                interpretation = ""
+                if r2 >= 0.9:
+                    interpretation = "Excellent fit"
+                elif r2 >= 0.7:
+                    interpretation = "Good fit"
+                elif r2 >= 0.5:
+                    interpretation = "Moderate fit"
+                else:
+                    interpretation = "Poor fit"
+                
+                interp_text = tk.Text(r2_frame, height=1, width=20, wrap=tk.NONE, state='disabled',
+                                    font=self.text_widget_font, relief=tk.SOLID, borderwidth=1, padx=5)
+                interp_text.grid(row=0, column=2, padx=(5,0), sticky='w')
+                interp_text.config(state='normal')
+                interp_text.insert(tk.END, interpretation)
+                interp_text.config(state='disabled')
+                
+                r2_row_num += 1
+            
+            # Calculate and display average R²
+            avg_r2 = np.mean([func['model'].score(func['X_design'], func['y']) for func in self.result_functions.values()])
+            
+            avg_frame = ttk.Frame(self.r2_frame)
+            avg_frame.grid(row=r2_row_num, column=0, sticky='ew', pady=(10,0))
+            
+            ttk.Label(avg_frame, text="Average R²:", font=(self.label_font.cget("family"), 
+                     self.label_font.cget("size"), "bold")).grid(row=0, column=0, sticky='w')
+            
+            avg_text = tk.Text(avg_frame, height=1, width=15, wrap=tk.NONE, state='disabled',
+                             font=self.text_widget_font, relief=tk.SOLID, borderwidth=1, padx=5)
+            avg_text.grid(row=0, column=1, padx=(5,0), sticky='w')
+            avg_text.config(state='normal')
+            avg_text.insert(tk.END, f"{avg_r2:.4f}")
+            avg_text.config(state='disabled')
 
+    def _generate_single_result_equation(self, beta, bits_array, n_factors):
+        """Helper method to generate equation string for a single result (same as single optimization)"""
+        if beta is None or bits_array is None or bits_array.size == 0 or len(beta) != bits_array.shape[0]:
+            return "0"
+
+        # Initialize lists to store terms of each type
+        constant_terms = []
+        linear_terms = []
+        quadratic_terms = []
+        interaction_terms = []
+
+        # Process each term and classify it
+        for i, (coef, bits) in enumerate(zip(beta, bits_array)):
+            if abs(coef) < 1e-7:
+                continue  # Skip negligible terms
+
+            term_type = self._classify_term(bits)
+            term_str = self._format_term(coef, bits, n_factors)
+
+            if term_type == 'constant':
+                constant_terms.append(term_str)
+            elif term_type == 'linear':
+                # Store with factor index for sorting (f1, f2, f3,...)
+                factor_idx = np.where(bits == 1)[0][0]
+                linear_terms.append((factor_idx, term_str))
+            elif term_type == 'quadratic':
+                # Store with factor index for sorting (f1², f2², f3²,...)
+                factor_idx = np.where(bits == 2)[0][0]
+                quadratic_terms.append((factor_idx, term_str))
+            elif term_type == 'interaction':
+                # Store with factor indices for sorting (f1×f2, f1×f3,..., f2×f3, f2×f4,...)
+                idxs = np.where(bits == 1)[0]
+                interaction_terms.append((idxs[0], idxs[1], term_str))
+
+        # Sort terms according to specified ordering
+        # Linear terms: f1, f2, f3,...
+        linear_terms.sort(key=lambda x: x[0])
+        
+        # Quadratic terms: f1², f2², f3²,...
+        quadratic_terms.sort(key=lambda x: x[0])
+        
+        # Interaction terms: f1×f2, f1×f3,..., f2×f3, f2×f4,...
+        interaction_terms.sort(key=lambda x: (x[0], x[1]))
+
+        # Combine all terms in the specified order
+        equation_terms = []
+        
+        # Add constant term if present
+        if constant_terms:
+            equation_terms.append(constant_terms[0])  # There should be only one constant term
+
+        # Add linear terms (f1, f2, f3,...)
+        equation_terms.extend([t[1] for t in linear_terms])
+        
+        # Add quadratic terms (f1², f2², f3²,...)
+        equation_terms.extend([t[1] for t in quadratic_terms])
+        
+        # Add interaction terms (f1×f2, f1×f3,..., f2×f3, f2×f4,...)
+        equation_terms.extend([t[2] for t in interaction_terms])
+
+        # Construct the final equation string
+        if not equation_terms:
+            return "0"
+        else:
+            # Join terms with appropriate signs
+            equation_str = " ".join(equation_terms).replace(" + -", " - ")
+            # Handle case where first term is negative
+            if equation_str.startswith("- "):
+                return equation_str[2:]  # Remove the "- " since we'll add it in the display
+            return equation_str
+        
     def update_3d_plot(self):
-        if self.df is None or self.coefficients is None or not self.factor_cols:
+        if self.df is None or not self.factor_cols:
             return
 
         x_factor_display_name = self.x_factor_combo.get()
@@ -883,30 +1310,119 @@ class CSRApp:
             return
 
         try:
+            # Find internal factor names from display names
             x_internal_name = None
             y_internal_name = None
-            # Need to iterate through original names to find matching internal names
-            for internal_name_loop, display_name_loop in self.col_name_mapping.items():
-                 if display_name_loop == x_factor_display_name and internal_name_loop.startswith("factor"):
-                    x_internal_name = internal_name_loop
-                 if display_name_loop == y_factor_display_name and internal_name_loop.startswith("factor"):
-                    y_internal_name = internal_name_loop
-
+            
+            for internal_name, display_name in self.col_name_mapping.items():
+                if display_name == x_factor_display_name and internal_name.startswith("factor"):
+                    x_internal_name = internal_name
+                if display_name == y_factor_display_name and internal_name.startswith("factor"):
+                    y_internal_name = internal_name
 
             if not x_internal_name or not y_internal_name:
-                 messagebox.showerror("Error", "Could not map selected display factor names to internal factor names.")
-                 return
-
+                messagebox.showerror("Error", "Could not map selected display factor names to internal factor names.")
+                return
 
             x_idx = self.factor_cols.index(x_internal_name)
             y_idx = self.factor_cols.index(y_internal_name)
-
             n_factors = len(self.factor_cols)
-            self.plot_results(n_factors, x_idx, y_idx)
-        except ValueError:
-            messagebox.showerror("Error", f"Selected factor not found in the internal list. Try reloading data or re-running fitting.")
+
+            # Clear the figure and prepare for new plot
+            self.figure2.clf()
+            self.figure2.subplots_adjust(bottom=0.18, left=0.1, right=0.85, top=0.9)
+            self.figure2.patch.set_facecolor('#F0F0F0')
+            ax2 = self.figure2.add_subplot(111, projection='3d', facecolor='#ffffff')
+            
+            # Configure the 3D plot appearance
+            ax2.grid(True, linestyle=':', alpha=0.5)
+            for pane_ax in [ax2.xaxis, ax2.yaxis, ax2.zaxis]: 
+                pane_ax.set_pane_color((1.0, 1.0, 1.0, 0.0))
+                pane_ax.pane.set_edgecolor('#D0D0D0')
+
+            # Get the ranges for the selected factors
+            x1_orig_plot_axis = np.linspace(self.X_original_scale[:, x_idx].min(), 
+                                        self.X_original_scale[:, x_idx].max(), 20)
+            x2_orig_plot_axis = np.linspace(self.X_original_scale[:, y_idx].min(), 
+                                        self.X_original_scale[:, y_idx].max(), 20)
+            x1_grid_orig, x2_grid_orig = np.meshgrid(x1_orig_plot_axis, x2_orig_plot_axis)
+            z_csr_values_grid = np.zeros_like(x1_grid_orig)
+
+            # Get fixed values for other factors (use extremum point if available, otherwise mean)
+            fixed_factor_values_original_scale = np.mean(self.X_original_scale, axis=0)
+            if (self.extremum_point and self.extremum_point['x'] is not None and 
+                len(self.extremum_point['x']) == n_factors):
+                fixed_factor_values_original_scale = self.extremum_point['x']
+
+            # Evaluate the CSR function across the grid
+            for i_grid in range(x1_grid_orig.shape[0]):
+                for j_grid in range(x1_grid_orig.shape[1]):
+                    current_full_point_orig_scale = fixed_factor_values_original_scale.copy()
+                    current_full_point_orig_scale[x_idx] = x1_grid_orig[i_grid, j_grid]
+                    current_full_point_orig_scale[y_idx] = x2_grid_orig[i_grid, j_grid]
+                    
+                    if hasattr(self, 'comprehensive_function'):
+                        # For comprehensive optimization
+                        z_csr_values_grid[i_grid, j_grid] = self.comprehensive_function(current_full_point_orig_scale)
+                    elif hasattr(self, 'coefficients') and hasattr(self, 'bits_array'):
+                        # For single result optimization
+                        current_full_point_norm_scale = self._normalize_point(current_full_point_orig_scale)
+                        if current_full_point_norm_scale is not None:
+                            z_csr_values_grid[i_grid, j_grid] = self.evaluate_csr_at_point(current_full_point_norm_scale)
+                        else:
+                            z_csr_values_grid[i_grid, j_grid] = np.nan
+                    else:
+                        z_csr_values_grid[i_grid, j_grid] = np.nan
+
+            # Plot the surface
+            surf = ax2.plot_surface(x1_grid_orig, x2_grid_orig, z_csr_values_grid, 
+                                cmap='viridis', alpha=0.9, edgecolor='#555555', 
+                                linewidth=0.15, antialiased=True)
+
+            # Plot extremum point if available
+            if (self.extremum_point and self.extremum_point['x'] is not None and 
+                len(self.extremum_point['x']) == n_factors):
+                ax2.scatter([self.extremum_point['x'][x_idx]], 
+                        [self.extremum_point['x'][y_idx]], 
+                        [self.extremum_point['value']], 
+                        c='gold', s=200, marker='*', edgecolor='black', 
+                        linewidth=1, label='Extremum', depthshade=True, zorder=10)
+
+            # Set axis labels
+            x_axis_name = self.col_name_mapping.get(self.factor_cols[x_idx], self.factor_cols[x_idx])
+            y_axis_name = self.col_name_mapping.get(self.factor_cols[y_idx], self.factor_cols[y_idx])
+            result_axis_name = "Combined Result" if hasattr(self, 'comprehensive_function') else self.col_name_mapping.get("result", "Result")
+            
+            ax2.set_xlabel(f"\n{x_axis_name}", fontsize=9, fontweight='bold', linespacing=2)
+            ax2.set_ylabel(f"\n{y_axis_name}", fontsize=9, fontweight='bold', linespacing=2)
+            ax2.set_zlabel(f"\n{result_axis_name}", fontsize=9, fontweight='bold', linespacing=2)
+            ax2.set_title('CSR Response Surface', fontsize=11, fontweight='bold', y=1.02)
+
+            # Add legend if extremum point is plotted
+            if (self.extremum_point and self.extremum_point['x'] is not None and 
+                len(self.extremum_point['x']) == n_factors):
+                ax2.legend(fontsize=8, facecolor='#F0F0F0', framealpha=0.8)
+
+            # Add colorbar
+            cbar = self.figure2.colorbar(surf, ax=ax2, shrink=0.6, aspect=12, pad=0.15, format="%.2f")
+            cbar.ax.tick_params(labelsize=8)
+            cbar.outline.set_edgecolor('gray')
+            
+            # Set view angle
+            ax2.view_init(elev=28, azim=130)
+            
+            # Adjust tick parameters
+            for axis_obj in [ax2.xaxis, ax2.yaxis, ax2.zaxis]:
+                axis_obj.set_tick_params(pad=3, labelsize=8)
+                axis_obj.label.set_size(9)
+
+            self.canvas2.draw()
+
         except Exception as e:
             messagebox.showerror("Error", f"Failed to update 3D plot: {str(e)}")
+            # Print the full traceback to help with debugging
+            import traceback
+            traceback.print_exc()
 
     def generate_bits_array(self, n_factors):
         if n_factors <= 0:
@@ -995,6 +1511,34 @@ class CSRApp:
 
         res = minimize(objective_to_minimize, x0_for_opt, bounds=bounds_for_opt, method='L-BFGS-B')
         return {'x': res.x, 'value': objective_func_val(res.x)}
+
+    def find_extremum_comprehensive(self, bounds_for_opt, x0_for_opt, extremum_type):
+        """Find extremum for the comprehensive function that combines multiple results"""
+        if not hasattr(self, 'comprehensive_function'):
+            return {'x': np.array([]), 'value': np.nan}
+
+        def comprehensive_func_for_optimizer(x_point_in_opt_scale):
+            return self.comprehensive_function(x_point_in_opt_scale)
+
+        # Set up the objective function based on extremum type
+        if extremum_type == 'maximum':
+            objective_to_minimize = lambda x_vals: -comprehensive_func_for_optimizer(x_vals)
+        elif extremum_type == 'minimum':
+            objective_to_minimize = comprehensive_func_for_optimizer
+        elif extremum_type == 'maximum_absolute_value':
+            objective_to_minimize = lambda x_vals: -np.abs(comprehensive_func_for_optimizer(x_vals))
+        elif extremum_type == 'minimum_absolute_value':
+            objective_to_minimize = lambda x_vals: np.abs(comprehensive_func_for_optimizer(x_vals))
+        else:
+            objective_to_minimize = comprehensive_func_for_optimizer
+
+        # Perform the optimization - note bounds are in original scale
+        res = minimize(objective_to_minimize, x0_for_opt, bounds=bounds_for_opt, method='L-BFGS-B')
+        
+        return {
+            'x': res.x,  # Already in original scale
+            'value': comprehensive_func_for_optimizer(res.x)
+        }
 
     def _normalize_point(self, x_point_original_scale):
         if x_point_original_scale is None: return None
@@ -1158,78 +1702,219 @@ class CSRApp:
         return f"{'+' if coef >= 0 else '-'} {term_str}"
 
     def plot_results(self, n_factors, x_plot_idx=0, y_plot_idx=1):
-        self.figure1.clf(); self.figure1.subplots_adjust(bottom=0.18, left=0.18, top=0.9, right=0.95); self.figure1.patch.set_facecolor('#F0F0F0')
-        ax1 = self.figure1.add_subplot(111, facecolor='#ffffff'); ax1.grid(True, linestyle=':', alpha=0.6, color='gray')
-        for spine in ax1.spines.values(): spine.set_edgecolor('gray')
-        if self.y is not None and self.y_pred is not None:
-            ax1.scatter(self.y, self.y_pred, alpha=0.7, edgecolors='#333333', s=40, c="#007ACC")
+        self.figure1.clf() 
+        self.figure1.subplots_adjust(bottom=0.18, left=0.18, top=0.9, right=0.95) 
+        self.figure1.patch.set_facecolor('#F0F0F0')
+        ax1 = self.figure1.add_subplot(111, facecolor='#ffffff') 
+        ax1.grid(True, linestyle=':', alpha=0.6, color='gray')
+        
+        for spine in ax1.spines.values(): 
+            spine.set_edgecolor('gray')
+        
+        # Handle comprehensive optimization case
+        if hasattr(self, 'result_functions'):
+            # For comprehensive optimization, we'll show all individual fits
+            colors = plt.cm.tab10(np.linspace(0, 1, len(self.result_functions)))
+            
+            for i, (result_col, func_data) in enumerate(self.result_functions.items()):
+                y = func_data['y']
+                y_pred = func_data['model'].predict(func_data['X_design'])
+                
+                ax1.scatter(y, y_pred, alpha=0.7, edgecolors='#333333', s=40, 
+                            color=colors[i], label=self.col_name_mapping.get(result_col, result_col))
+            
+            min_val = min(min(func['y'].min(), func['model'].predict(func['X_design']).min()) 
+                       for func in self.result_functions.values())
+            max_val = max(max(func['y'].max(), func['model'].predict(func['X_design']).max()) 
+                       for func in self.result_functions.values())
+            
+            ax1.plot([min_val, max_val], [min_val, max_val], 'r--', lw=1.5, label='Perfect Fit')
+            ax1.legend(fontsize=9)
+        elif self.y is not None and self.y_pred is not None:
+            # Single result case
+            ax1.scatter(self.y, self.y_pred, alpha=0.7, edgecolors='#333333', s=40, color="#007ACC")
             min_val, max_val = min(self.y.min(), self.y_pred.min()), max(self.y.max(), self.y_pred.max())
             ax1.plot([min_val, max_val], [min_val, max_val], 'r--', lw=1.5, label='Perfect Fit')
-            ax1.set_xlabel('Actual Values', fontsize=10,fontweight='bold'); ax1.set_ylabel('Predicted Values', fontsize=10, fontweight='bold')
-            ax1.set_title('Actual vs. Predicted Performance', fontsize=11, fontweight='bold'); ax1.legend(fontsize=9)
-        else: ax1.text(0.5, 0.5, "No data to plot", ha="center", va="center", fontsize=10, color='gray')
+            ax1.legend(fontsize=9)
+        else:
+            ax1.text(0.5, 0.5, "No data to plot", ha="center", va="center", fontsize=10, color='gray')
+        
+        ax1.set_xlabel('Actual Values', fontsize=10, fontweight='bold')
+        ax1.set_ylabel('Predicted Values', fontsize=10, fontweight='bold')
+        ax1.set_title('Actual vs. Predicted Performance', fontsize=11, fontweight='bold')
         self.canvas1.draw()
 
-        self.figure2.clf(); self.figure2.subplots_adjust(bottom=0.18, left=0.1, right=0.85, top=0.9); self.figure2.patch.set_facecolor('#F0F0F0')
+        # Handle the 3D plot
+        self.figure2.clf()
+        self.figure2.subplots_adjust(bottom=0.18, left=0.1, right=0.85, top=0.9)
+        self.figure2.patch.set_facecolor('#F0F0F0')
         ax2_facecolor = '#ffffff'
-        if self.coefficients is None or self.bits_array is None or self.X_original_scale is None or n_factors ==0 :
-            ax2 = self.figure2.add_subplot(111, facecolor=ax2_facecolor); ax2.text(0.5, 0.5, "Fit model to see surface plot", ha="center", va="center", fontsize=10, color='gray')
-            for spine in ax2.spines.values(): spine.set_edgecolor('gray')
-            self.canvas2.draw(); return
+        
+        if (not hasattr(self, 'comprehensive_function') and (self.coefficients is None or self.bits_array is None or 
+            self.X_original_scale is None or n_factors == 0)):
+            ax2 = self.figure2.add_subplot(111, facecolor=ax2_facecolor)
+            ax2.text(0.5, 0.5, "Fit model to see surface plot", 
+                    ha="center", va="center", fontsize=10, color='gray')
+            for spine in ax2.spines.values(): 
+                spine.set_edgecolor('gray')
+            self.canvas2.draw()
+            return
 
         if n_factors == 1:
-            ax2 = self.figure2.add_subplot(111, facecolor=ax2_facecolor); ax2.grid(True, linestyle=':', alpha=0.6, color='gray')
-            for spine in ax2.spines.values(): spine.set_edgecolor('gray')
-            x_orig_plot_axis = np.linspace(self.X_original_scale[:, 0].min(), self.X_original_scale[:, 0].max(), 100)
+            ax2 = self.figure2.add_subplot(111, facecolor=ax2_facecolor)
+            ax2.grid(True, linestyle=':', alpha=0.6, color='gray')
+            for spine in ax2.spines.values(): 
+                spine.set_edgecolor('gray')
+            
+            x_orig_plot_axis = np.linspace(self.X_original_scale[:, 0].min(), 
+                                          self.X_original_scale[:, 0].max(), 100)
             points_to_eval_csr_orig = x_orig_plot_axis.reshape(-1,1)
-            z_csr_values = np.array([self.evaluate_csr_at_point(self._normalize_point(p)) if self._normalize_point(p) is not None else np.nan for p in points_to_eval_csr_orig])
+            
+            # Handle comprehensive vs single result
+            if hasattr(self, 'comprehensive_function'):
+                z_csr_values = np.array([self.comprehensive_function(p) for p in points_to_eval_csr_orig])
+            else:
+                z_csr_values = np.array([self.evaluate_csr_at_point(self._normalize_point(p)) 
+                                      if self._normalize_point(p) is not None else np.nan 
+                                      for p in points_to_eval_csr_orig])
+            
             ax2.plot(x_orig_plot_axis, z_csr_values, label='CSR Function', color="#D83B01", lw=2.5)
-            ax2.scatter(self.X_original_scale[:, 0], self.y, color="#007ACC", s=40, alpha=0.7, label='Original Data', edgecolors='#333333')
+            
+            # Plot original data points for all results in comprehensive case
+            if hasattr(self, 'result_functions'):
+                colors = plt.cm.tab10(np.linspace(0, 1, len(self.result_functions)))
+                for i, result_col in enumerate(self.result_functions):
+                    ax2.scatter(self.X_original_scale[:, 0], 
+                               self.result_functions[result_col]['y'], 
+                               color=colors[i], s=40, alpha=0.7, 
+                               label=self.col_name_mapping.get(result_col, result_col),
+                               edgecolors='#333333')
+                ax2.legend(fontsize=9)
+            else:
+                ax2.scatter(self.X_original_scale[:, 0], self.y, color="#007ACC", 
+                           s=40, alpha=0.7, label='Original Data', edgecolors='#333333')
+
+            # Plot extremum point if available
             if self.extremum_point and self.extremum_point['x'] is not None and len(self.extremum_point['x']) > 0:
-                extremum_x_orig = self._unnormalize_point(self.extremum_point['x'])
-                if extremum_x_orig is not None and len(extremum_x_orig)>0:
-                    ax2.scatter([extremum_x_orig[0]], [self.extremum_point['value']], c='gold', s=200, marker='*', edgecolor='black', linewidth=1, label='Extremum', zorder=5)
+                if hasattr(self, 'comprehensive_function'):
+                    extremum_x_orig = self.extremum_point['x']
+                else:
+                    extremum_x_orig = self._unnormalize_point(self.extremum_point['x'])
+                
+                if extremum_x_orig is not None and len(extremum_x_orig) > 0:
+                    ax2.scatter([extremum_x_orig[0]], [self.extremum_point['value']], 
+                               c='gold', s=200, marker='*', edgecolor='black', 
+                               linewidth=1, label='Extremum', zorder=5)
+                    ax2.legend(fontsize=9)
+
             factor_disp_name = self.col_name_mapping.get(self.factor_cols[0], self.factor_cols[0])
-            result_disp_name = self.col_name_mapping.get("result", "Result")
-            ax2.set_xlabel(factor_disp_name, fontsize=10, fontweight='bold'); ax2.set_ylabel(result_disp_name, fontsize=10, fontweight='bold')
-            ax2.set_title(f'CSR Output vs. {factor_disp_name}', fontsize=11, fontweight='bold'); ax2.legend(fontsize=9)
+            result_disp_name = "Combined Result" if hasattr(self, 'comprehensive_function') else self.col_name_mapping.get("result", "Result")
+            ax2.set_xlabel(factor_disp_name, fontsize=10, fontweight='bold')
+            ax2.set_ylabel(result_disp_name, fontsize=10, fontweight='bold')
+            ax2.set_title(f'CSR Output vs. {factor_disp_name}', fontsize=11, fontweight='bold')
+
         elif n_factors >= 2:
-            ax2 = self.figure2.add_subplot(111, projection='3d', facecolor=ax2_facecolor); ax2.grid(True, linestyle=':', alpha=0.5)
-            for pane_ax in [ax2.xaxis, ax2.yaxis, ax2.zaxis]: pane_ax.set_pane_color((1.0, 1.0, 1.0, 0.0)); pane_ax.pane.set_edgecolor('#D0D0D0')
-            x1_orig_plot_axis = np.linspace(self.X_original_scale[:, x_plot_idx].min(), self.X_original_scale[:, x_plot_idx].max(), 20)
-            x2_orig_plot_axis = np.linspace(self.X_original_scale[:, y_plot_idx].min(), self.X_original_scale[:, y_plot_idx].max(), 20)
+            ax2 = self.figure2.add_subplot(111, projection='3d', facecolor=ax2_facecolor)
+            ax2.grid(True, linestyle=':', alpha=0.5)
+            
+            for pane_ax in [ax2.xaxis, ax2.yaxis, ax2.zaxis]: 
+                pane_ax.set_pane_color((1.0, 1.0, 1.0, 0.0))
+                pane_ax.pane.set_edgecolor('#D0D0D0')
+            
+            x1_orig_plot_axis = np.linspace(self.X_original_scale[:, x_plot_idx].min(), 
+                                           self.X_original_scale[:, x_plot_idx].max(), 20)
+            x2_orig_plot_axis = np.linspace(self.X_original_scale[:, y_plot_idx].min(), 
+                                           self.X_original_scale[:, y_plot_idx].max(), 20)
             x1_grid_orig, x2_grid_orig = np.meshgrid(x1_orig_plot_axis, x2_orig_plot_axis)
             z_csr_values_grid = np.zeros_like(x1_grid_orig)
+            
+            # Get fixed values for other factors (use extremum point if available, otherwise mean)
             fixed_factor_values_original_scale = np.mean(self.X_original_scale, axis=0)
-            if self.extremum_point and self.extremum_point['x'] is not None and len(self.extremum_point['x']) == n_factors:
-                 unnorm_temp = self._unnormalize_point(self.extremum_point['x']); fixed_factor_values_original_scale = unnorm_temp if unnorm_temp is not None else fixed_factor_values_original_scale
+            if (self.extremum_point and self.extremum_point['x'] is not None and 
+                len(self.extremum_point['x']) == n_factors):
+                if hasattr(self, 'comprehensive_function'):
+                    fixed_factor_values_original_scale = self.extremum_point['x']
+                else:
+                    unnorm_temp = self._unnormalize_point(self.extremum_point['x'])
+                    if unnorm_temp is not None:
+                        fixed_factor_values_original_scale = unnorm_temp
+            
+            # Evaluate comprehensive function across the grid
             for i_grid in range(x1_grid_orig.shape[0]):
                 for j_grid in range(x1_grid_orig.shape[1]):
                     current_full_point_orig_scale = fixed_factor_values_original_scale.copy()
-                    current_full_point_orig_scale[x_plot_idx], current_full_point_orig_scale[y_plot_idx] = x1_grid_orig[i_grid, j_grid], x2_grid_orig[i_grid, j_grid]
-                    current_full_point_norm_scale = self._normalize_point(current_full_point_orig_scale)
-                    z_csr_values_grid[i_grid, j_grid] = self.evaluate_csr_at_point(current_full_point_norm_scale) if current_full_point_norm_scale is not None else np.nan
-            surf = ax2.plot_surface(x1_grid_orig, x2_grid_orig, z_csr_values_grid, cmap='viridis', alpha=0.9, edgecolor='#555555', linewidth=0.15, antialiased=True)
-            if self.extremum_point and self.extremum_point['x'] is not None and len(self.extremum_point['x']) == n_factors:
-                extremum_x_orig_for_scatter = self._unnormalize_point(self.extremum_point['x'])
+                    current_full_point_orig_scale[x_plot_idx] = x1_grid_orig[i_grid, j_grid]
+                    current_full_point_orig_scale[y_plot_idx] = x2_grid_orig[i_grid, j_grid]
+                    
+                    if hasattr(self, 'comprehensive_function'):
+                        z_csr_values_grid[i_grid, j_grid] = self.comprehensive_function(current_full_point_orig_scale)
+                    else:
+                        current_full_point_norm_scale = self._normalize_point(current_full_point_orig_scale)
+                        if current_full_point_norm_scale is not None:
+                            z_csr_values_grid[i_grid, j_grid] = self.evaluate_csr_at_point(current_full_point_norm_scale)
+                        else:
+                            z_csr_values_grid[i_grid, j_grid] = np.nan
+            
+            # Plot the surface
+            surf = ax2.plot_surface(x1_grid_orig, x2_grid_orig, z_csr_values_grid, 
+                                   cmap='viridis', alpha=0.9, edgecolor='#555555', 
+                                   linewidth=0.15, antialiased=True)
+            
+            # Plot extremum point if available
+            if (self.extremum_point and self.extremum_point['x'] is not None and 
+                len(self.extremum_point['x']) == n_factors):
+                if hasattr(self, 'comprehensive_function'):
+                    extremum_x_orig_for_scatter = self.extremum_point['x']
+                else:
+                    extremum_x_orig_for_scatter = self._unnormalize_point(self.extremum_point['x'])
+                
                 if extremum_x_orig_for_scatter is not None:
-                    ax2.scatter([extremum_x_orig_for_scatter[x_plot_idx]], [extremum_x_orig_for_scatter[y_plot_idx]], [self.extremum_point['value']], c='gold', s=200, marker='*', edgecolor='black', linewidth=1, label='Extremum', depthshade=True, zorder=10)
-            x_axis_name, y_axis_name = self.col_name_mapping.get(self.factor_cols[x_plot_idx], self.factor_cols[x_plot_idx]), self.col_name_mapping.get(self.factor_cols[y_plot_idx], self.factor_cols[y_plot_idx])
-            result_axis_name = self.col_name_mapping.get("result", "Result")
-            ax2.set_xlabel(f"\n{x_axis_name}", fontsize=9, fontweight='bold', linespacing=2); ax2.set_ylabel(f"\n{y_axis_name}", fontsize=9, fontweight='bold', linespacing=2); ax2.set_zlabel(f"\n{result_axis_name}", fontsize=9, fontweight='bold', linespacing=2)
-            ax2.set_title('CSR Response Surface', fontsize=11, fontweight='bold', y=1.02);
-            if self.extremum_point and self.extremum_point['x'] is not None: ax2.legend(fontsize=8, facecolor='#F0F0F0', framealpha=0.8)
-            cbar = self.figure2.colorbar(surf, ax=ax2, shrink=0.6, aspect=12, pad=0.15, format="%.2f"); cbar.ax.tick_params(labelsize=8); cbar.outline.set_edgecolor('gray')
+                    ax2.scatter([extremum_x_orig_for_scatter[x_plot_idx]], 
+                               [extremum_x_orig_for_scatter[y_plot_idx]], 
+                               [self.extremum_point['value']], 
+                               c='gold', s=200, marker='*', edgecolor='black', 
+                               linewidth=1, label='Extremum', depthshade=True, zorder=10)
+            
+            x_axis_name = self.col_name_mapping.get(self.factor_cols[x_plot_idx], self.factor_cols[x_plot_idx])
+            y_axis_name = self.col_name_mapping.get(self.factor_cols[y_plot_idx], self.factor_cols[y_plot_idx])
+            result_axis_name = "Combined Result" if hasattr(self, 'comprehensive_function') else self.col_name_mapping.get("result", "Result")
+            
+            ax2.set_xlabel(f"\n{x_axis_name}", fontsize=9, fontweight='bold', linespacing=2)
+            ax2.set_ylabel(f"\n{y_axis_name}", fontsize=9, fontweight='bold', linespacing=2)
+            ax2.set_zlabel(f"\n{result_axis_name}", fontsize=9, fontweight='bold', linespacing=2)
+            ax2.set_title('CSR Response Surface', fontsize=11, fontweight='bold', y=1.02)
+            
+            if (self.extremum_point and self.extremum_point['x'] is not None and 
+                len(self.extremum_point['x']) == n_factors):
+                ax2.legend(fontsize=8, facecolor='#F0F0F0', framealpha=0.8)
+            
+            cbar = self.figure2.colorbar(surf, ax=ax2, shrink=0.6, aspect=12, pad=0.15, format="%.2f")
+            cbar.ax.tick_params(labelsize=8)
+            cbar.outline.set_edgecolor('gray')
             ax2.view_init(elev=28, azim=130)
-            for axis_obj in [ax2.xaxis, ax2.yaxis, ax2.zaxis]: axis_obj.set_tick_params(pad=3, labelsize=8); axis_obj.label.set_size(9)
+            
+            for axis_obj in [ax2.xaxis, ax2.yaxis, ax2.zaxis]:
+                axis_obj.set_tick_params(pad=3, labelsize=8)
+                axis_obj.label.set_size(9)
+        
         self.canvas2.draw()
 
     def evaluate_csr_at_point(self, x_point_in_fitting_scale):
-        if self.coefficients is None or self.bits_array is None: return np.nan
-        if x_point_in_fitting_scale is None or len(x_point_in_fitting_scale) != self.bits_array.shape[1]: return np.nan
+        if hasattr(self, 'comprehensive_function'):
+            # For comprehensive optimization, we need to unnormalize first
+            x_orig_scale = self._unnormalize_point(x_point_in_fitting_scale)
+            if x_orig_scale is None:
+                return np.nan
+            return self.comprehensive_function(x_orig_scale)
+        elif self.coefficients is None or self.bits_array is None:
+            return np.nan
+        elif x_point_in_fitting_scale is None or len(x_point_in_fitting_scale) != self.bits_array.shape[1]:
+            return np.nan
+        
         x_point_reshaped = np.array(x_point_in_fitting_scale).reshape(1, -1)
         design_row = self.create_design_matrix(x_point_reshaped, self.bits_array)
-        if design_row.shape[1] == 0: return np.nan
+        if design_row.shape[1] == 0:
+            return np.nan
         return np.dot(design_row[0], self.coefficients)
 
     def get_evaluation_point_for_coeffs(self):
@@ -1634,7 +2319,167 @@ class CSRApp:
             messagebox.showerror("Error", f"Failed to save charts:\n{str(e)}")
             # Clean up temp dir even if error occurs
             shutil.rmtree(temp_dir, ignore_errors=True)
+            
+    def create_oacd_tab(self):
+        # Main container for OACD tab
+        oacd_frame = ttk.Frame(self.tab3, style="App.TFrame")
+        oacd_frame.pack(fill='both', expand=True, padx=10, pady=10)
 
+        # Split left (controls) and right (table display)
+        left_frame = ttk.Frame(oacd_frame, style="App.TFrame")
+        left_frame.pack(side='left', fill='y', padx=(0, 20), pady=5)
+        right_frame = ttk.Frame(oacd_frame, style="App.TFrame")
+        right_frame.pack(side='left', fill='both', expand=True, pady=5)
+
+        # --- OACD Logic ---
+        self.oacd = OACD()
+        self.oacd_factor_num = tk.IntVar(value=2)
+        self.oacd_table_size = tk.StringVar(value="Small")
+        self.oacd_extrenum_vars = []  # List of (min_var, max_var) for each factor
+        self.oacd_table = None
+
+        # --- Controls ---
+        ttk.Label(left_frame, text="Number of Factors:", font=self.label_font).pack(anchor='w', pady=(0,2))
+        factor_num_combo = ttk.Combobox(left_frame, textvariable=self.oacd_factor_num, state="readonly", font=self.entry_font, width=8)
+        factor_num_combo['values'] = list(range(2, 11))
+        factor_num_combo.pack(anchor='w', pady=(0,8))
+        factor_num_combo.bind('<<ComboboxSelected>>', lambda e: self._oacd_update_extrenum_table())
+
+        ttk.Label(left_frame, text="Table Size:", font=self.label_font).pack(anchor='w', pady=(0,2))
+        table_size_combo = ttk.Combobox(left_frame, textvariable=self.oacd_table_size, state="readonly", font=self.entry_font, width=8)
+        table_size_combo['values'] = ["Small", "Medium", "Large"]
+        table_size_combo.pack(anchor='w', pady=(0,8))
+
+        # --- Interactive Extrenum Table ---
+        extrenum_frame = ttk.LabelFrame(left_frame, text="Factor Min/Max (Extrenum)", padding=(8,6,8,8))
+        extrenum_frame.pack(fill='x', pady=(10,8))
+        self.oacd_extrenum_table_frame = ttk.Frame(extrenum_frame, style="App.TFrame")
+        self.oacd_extrenum_table_frame.pack(fill='x', expand=True)
+        self._oacd_update_extrenum_table()
+
+        # --- Set all min/max ---
+        set_all_frame = ttk.Frame(left_frame, style="App.TFrame")
+        set_all_frame.pack(fill='x', pady=(5,8))
+        ttk.Label(set_all_frame, text="Set all min:").pack(side='left')
+        self.oacd_set_all_min = tk.DoubleVar(value=0.0)
+        min_entry = ttk.Entry(set_all_frame, textvariable=self.oacd_set_all_min, width=7, font=self.entry_font)
+        min_entry.pack(side='left', padx=(2,8))
+        ttk.Button(set_all_frame, text="Apply", command=self._oacd_apply_all_min, width=6).pack(side='left')
+        ttk.Label(set_all_frame, text="Set all max:").pack(side='left', padx=(10,0))
+        self.oacd_set_all_max = tk.DoubleVar(value=0.0)
+        max_entry = ttk.Entry(set_all_frame, textvariable=self.oacd_set_all_max, width=7, font=self.entry_font)
+        max_entry.pack(side='left', padx=(2,8))
+        ttk.Button(set_all_frame, text="Apply", command=self._oacd_apply_all_max, width=6).pack(side='left')
+
+        # --- Max Nonzero Controls ---
+        max_nonzero_frame = ttk.Frame(left_frame, style="App.TFrame")
+        max_nonzero_frame.pack(fill='x', pady=(5,8))
+        ttk.Label(max_nonzero_frame, text="Max Nonzero Factors:").pack(side='left')
+        self.oacd_max_nonzero_var = tk.IntVar(value=0)
+        max_nonzero_entry = ttk.Entry(max_nonzero_frame, textvariable=self.oacd_max_nonzero_var, width=7, font=self.entry_font)
+        max_nonzero_entry.pack(side='left', padx=(2,8))
+        ttk.Button(max_nonzero_frame, text="Apply", command=self._oacd_apply_max_nonzero, width=8).pack(side='left')
+
+        # --- Generate and Export Buttons ---
+        button_frame = ttk.Frame(left_frame, style="App.TFrame")
+        button_frame.pack(fill='x', pady=(15,5))
+        ttk.Button(button_frame, text="Import Extrenum from Excel", command=self._oacd_import_extrenum).pack(fill='x', pady=(0,8))
+        ttk.Button(button_frame, text="Generate OACD Table", command=self._oacd_generate_table, style="Accent.TButton").pack(fill='x', pady=(0,8))
+        ttk.Button(button_frame, text="Export as Excel", command=self._oacd_export_table).pack(fill='x', pady=(0,8))
+        
+        # --- OACD Table Display ---
+        table_disp_frame = ttk.LabelFrame(right_frame, text="Generated OACD Table", padding=(8,6,8,8))
+        table_disp_frame.pack(fill='both', expand=True)
+        x_scroll = ttk.Scrollbar(table_disp_frame, orient='horizontal')
+        x_scroll.pack(side='bottom', fill='x')
+        y_scroll = ttk.Scrollbar(table_disp_frame, orient='vertical')
+        y_scroll.pack(side='right', fill='y')
+        self.oacd_table_tree = ttk.Treeview(table_disp_frame, show='headings', xscrollcommand=x_scroll.set, yscrollcommand=y_scroll.set, height=15)
+        self.oacd_table_tree.pack(fill='both', expand=True)
+        x_scroll.config(command=self.oacd_table_tree.xview)
+        y_scroll.config(command=self.oacd_table_tree.yview)
+
+    def _oacd_update_extrenum_table(self):
+        # Clear previous widgets
+        for widget in self.oacd_extrenum_table_frame.winfo_children():
+            widget.destroy()
+        self.oacd_extrenum_vars = []
+        n = self.oacd_factor_num.get() if hasattr(self, 'oacd_factor_num') else 2
+        # Header
+        ttk.Label(self.oacd_extrenum_table_frame, text="Factor", width=8).grid(row=0, column=0, padx=2, pady=2)
+        ttk.Label(self.oacd_extrenum_table_frame, text="Min", width=8).grid(row=0, column=1, padx=2, pady=2)
+        ttk.Label(self.oacd_extrenum_table_frame, text="Max", width=8).grid(row=0, column=2, padx=2, pady=2)
+        for i in range(n):
+            ttk.Label(self.oacd_extrenum_table_frame, text=f"F{i+1}", width=8).grid(row=i+1, column=0, padx=2, pady=2)
+            min_var = tk.DoubleVar(value=0.0)
+            max_var = tk.DoubleVar(value=0.0)
+            min_entry = ttk.Entry(self.oacd_extrenum_table_frame, textvariable=min_var, width=8, font=self.entry_font)
+            max_entry = ttk.Entry(self.oacd_extrenum_table_frame, textvariable=max_var, width=8, font=self.entry_font)
+            min_entry.grid(row=i+1, column=1, padx=2, pady=2)
+            max_entry.grid(row=i+1, column=2, padx=2, pady=2)
+            self.oacd_extrenum_vars.append((min_var, max_var))
+
+    def _oacd_apply_all_min(self):
+        for min_var, _ in self.oacd_extrenum_vars:
+            min_var.set(self.oacd_set_all_min.get())
+
+    def _oacd_apply_all_max(self):
+        for _, max_var in self.oacd_extrenum_vars:
+            max_var.set(self.oacd_set_all_max.get())
+
+    def _oacd_apply_max_nonzero(self):
+        value = self.oacd_max_nonzero_var.get()
+        if value <= 0:
+            tk.messagebox.showwarning("Invalid Value", "Please enter a positive integer for max nonzero factors.")
+            return
+        self.oacd.max_nonzero = value
+        self.oacd.reduce_levels()
+        self._oacd_display_table()
+
+    def _oacd_generate_table(self):
+        # Set up OACD object
+        n = self.oacd_factor_num.get()
+        self.oacd.set_factor_num(n)
+        self.oacd.set_table_size(self.oacd_table_size.get())
+        # Build extrenum DataFrame from UI
+        extrenum = np.zeros((n,2))
+        for i, (min_var, max_var) in enumerate(self.oacd_extrenum_vars):
+            extrenum[i,0] = min_var.get()
+            extrenum[i,1] = max_var.get()
+        self.oacd.set_factor_extrenum(pd.DataFrame(extrenum))
+        result = self.oacd.build_table()
+        print(self.oacd.table)
+        if result != 1:
+            messagebox.showerror("Error", "Failed to build OACD table. Check factor number and table size.")
+            return
+        self._oacd_display_table()
+
+    def _oacd_display_table(self):
+        # Clear previous
+        for col in self.oacd_table_tree.get_children():
+            self.oacd_table_tree.delete(col)
+        columns = ["Run"] + [f"F{i+1}" for i in range(self.oacd.table.shape[1])]
+        self.oacd_table_tree['columns'] = columns
+        for i, col in enumerate(columns):
+            self.oacd_table_tree.heading(col, text=col)
+            self.oacd_table_tree.column(col, width=80, anchor='center')
+        for idx, row in self.oacd.table.iterrows():
+            values = [str(idx+1)] + [f"{x:.4f}" for x in row.values]
+            self.oacd_table_tree.insert('', 'end', values=values)
+
+    def _oacd_export_table(self):
+        if self.oacd.table is None:
+            messagebox.showwarning("No Table", "Please generate the OACD table first.")
+            return
+        file_path = filedialog.asksaveasfilename(defaultextension='.xlsx', filetypes=[("Excel files", "*.xlsx")], title="Save OACD Table As")
+        if not file_path:
+            return
+        try:
+            self.oacd.table.to_excel(file_path, index=False)
+            messagebox.showinfo("Exported", f"OACD table exported to:\n{file_path}")
+        except Exception as e:
+            messagebox.showerror("Export Error", f"Failed to export table:\n{str(e)}")
+            
     def _oacd_import_extrenum(self):
         file_path = filedialog.askopenfilename(filetypes=[("Excel files", "*.xlsx *.xls")], title="Select Extrenum Excel File")
         if not file_path:

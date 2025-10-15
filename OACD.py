@@ -6,11 +6,13 @@ import numpy as np
 class OACD:
     def __init__(self):
         
-        self.factor_num = None # 2, 3, 4, 5, 6, 7, 8, 9, 10
-        self.table_size = None # Small, Medium, Large
+        self.factor_num = 2 # 2, 3, 4, 5, 6, 7, 8, 9, 10
+        self.table_size = "Small" # Small, Medium, Large
         self.table = None # Pandas DataFrame object
         self.factor_extrenum = None # First column is minimum, second column is maximum; each row is a factor
         self.max_nonzero = None; # Max number of non-zero factors
+        self.limits = pd.DataFrame({'limits': [None] * self.factor_num}) # each row is a factor; each factor can be assigned to a limit or None
+        self.limit_names = {None : None} # Dictionary of limit names and their display
         
     def __str__(self):
         string = ""
@@ -24,6 +26,7 @@ class OACD:
         self.factor_num = factor_num
         self.factor_extrenum = pd.DataFrame(np.ones((self.factor_num, 2)))
         self.factor_extrenum.iloc[:, 1] = -1; 
+        self.limits = pd.DataFrame({'limits': [None] * self.factor_num}) 
         
     def set_table_size(self, table_size):
         self.table_size = table_size
@@ -46,7 +49,7 @@ class OACD:
     def build_table(self):
         
         # Returns -1 if there table isn't built / error in factor_num
-        if(self.table_size != "Small" and self.table_size != "Medium" and self.table_size != "Large"):
+        if(self.table_size != "Small" and self.table_size != "Medium" and self.table_size != "Large" and self.factor_num != None):
             return -1
         
         # Creates a table using a combination of an orthogonal array and central composite design
@@ -268,6 +271,8 @@ class OACD:
             self.table.iloc[:, factor] = self.table.iloc[:, factor].map(
                 lambda x: min_val if x == -1 or x == -1.0 else (max_val if x == 1 or x == 1.0 else (avg_val if x == 0 or x == 0.0 else x))
             )
+        
+        # self.limits = pd.DataFrame({'limits': [None] * self.factor_num})
             
         return 1;
     
@@ -282,12 +287,103 @@ class OACD:
         # Assume all columns are factors
         mask = (self.table != 0).sum(axis=1) <= self.max_nonzero
         self.table = self.table[mask].reset_index(drop=True)
+        
+    def add_limit(self, factors, limit, index=None):
+        """
+        Add an overall limiting category that applies to 2+ factors
+        
+        index allows existing limits to be applied to other factors
+        """
+        str_index = 0;
+        
+        # Check if changing limit on factor to None
+        if limit is None and factors:
+            self.limits.iloc[factors, 0] = None;
+            print(self.limits)
+            print(self.limit_names)
+            return
+        
+        while (str(limit) + "_" + str(str_index)) in self.limit_names.keys():
+            str_index += 1
+        if index != None and index.is_integer():
+            str_index = index
+        
+        # Check if limit was added, but not to any factors
+        # If so, will just be added to limit names but not applied to any factors
+        if factors:
+            # Apply limit to factors
+            self.limits.iloc[factors, 0] = str(limit) + "_" + str(str_index);
+        self.limit_names.update({str(limit) + "_" + str(str_index) : "Limit: " + str(limit) + " | Entry " + str(str_index)})
+            
+        print(self.limits)
+        print(self.limit_names)
+    
+    def remove_limit(self, limit_name):
+        """
+        Remove a limit by its name
+        """
+        if limit_name in self.limit_names.keys():
+            del self.limit_names[limit_name]
+        
+        if limit_name in self.limits['limits'].values:
+            self.limits['limits'] = self.limits['limits'].apply(lambda x: None if x == limit_name else x)
+            
+    def remove_all_limits(self):
+        self.limits = pd.DataFrame({'limits': [None] * self.factor_num})
+        self.limit_names = {None : None}
+            
+    def find_limit(self, limit_name):
+        """
+        Returns the factors that are under the limit
+        """
+        return self.limits.loc[self.limits['limits'].eq(limit_name)].index.to_list()
+    
+    def normalize_table(self):
+        """
+        Normalize the table based on imposed limits
+        """        
+        # Create the temporary normalized_table
+        normalized_table = self.table.copy()
+        print(self.limits)
+        
+        # Iterate through each entry in table
+        for run in range(self.table.shape[0]):
+            for factor in range(self.table.shape[1]):
+                # Find if the row has a limit applied to it
+                limit_name = self.limits.iloc[factor, 0]
+                if limit_name is not None:
+                    # Apply normalization to the values if they go above the limit
+                    limit = float(self.limits.iloc[factor, 0].split("_")[0])
+                    factors_to_limit = self.find_limit(limit_name)
+                    old_total = self.table.iloc[run, factors_to_limit].sum()
+                    normalized_value = self.table.iloc[run, factor]
+                    if old_total != 0:
+                        normalized_value = limit * (self.table.iloc[run, factor] / old_total)
+                    normalized_table.iloc[run, factor] = normalized_value
+                    
+        # Remove duplicate rows
+        normalized_table = normalized_table.drop_duplicates(ignore_index=True)
+        print("normalized")
+        self.table = normalized_table
+    
 
-
-# if __name__ == "__main__":
-#     oacd = OACD();
-#     oacd.set_factor_num(2);
-#     oacd.set_table_size("Small");
-
-
-#     print(oacd.table)
+if __name__ == "__main__":
+    oacd = OACD();
+    oacd.set_table_size("Small");
+    oacd.set_factor_num(3);
+    oacd.set_extrenum(0, 0, "min")
+    oacd.set_extrenum(100, 0, "max")
+    oacd.set_extrenum(0, 1, "min")
+    oacd.set_extrenum(100, 1, "max")
+    oacd.set_extrenum(0, 2, "min")
+    oacd.set_extrenum(100, 2, "max")
+    oacd.add_limit([0, 1, 2], 100)
+    oacd.add_limit([0, 1, 2], 100)
+    oacd.add_limit([0, 2], 100, 0)
+    oacd.build_table()
+    print(oacd.table)
+    # oacd.remove_limit("100_0")
+    oacd.normalize_table()
+    print(oacd.table)
+    print(oacd.limit_names)
+    

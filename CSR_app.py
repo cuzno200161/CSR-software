@@ -630,7 +630,7 @@ class CSRApp:
                 current_states = {col: var.get() for col, var in self.factor_checkboxes.items()}
                 
             # Get selected columns - use current_states if available, otherwise default to last column
-            # TODO Update for factor vs result columns
+
             if current_states:
                 self.result_cols = [col for col, state in current_states.items() 
                                   if state == "result" and col != "residual"]
@@ -2333,22 +2333,30 @@ class CSRApp:
 
         # --- OACD Logic ---
         self.oacd = OACD()
-        self.oacd_factor_num = tk.IntVar(value=2)
-        self.oacd_table_size = tk.StringVar(value="Small")
-        self.oacd_extrenum_vars = []  # List of (min_var, max_var) for each factor
-        self.oacd_table = None
+        self.oacd.set_factor_num(2)
+        self.oacd.set_table_size("Small")
+        self.oacd.extrenum_vars = []  # List of (min_var, max_var) for each factor
 
         # --- Controls ---
         ttk.Label(left_frame, text="Number of Factors:", font=self.label_font).pack(anchor='w', pady=(0,2))
-        factor_num_combo = ttk.Combobox(left_frame, textvariable=self.oacd_factor_num, state="readonly", font=self.entry_font, width=8)
+        factor_num_combo = ttk.Combobox(left_frame, state="readonly", font=self.entry_font, width=8)
         factor_num_combo['values'] = list(range(2, 11))
+        try:
+            factor_num_combo.set(str(self.oacd.factor_num))
+        except Exception:
+            pass
         factor_num_combo.pack(anchor='w', pady=(0,8))
-        factor_num_combo.bind('<<ComboboxSelected>>', lambda e: self._oacd_update_extrenum_table())
+        factor_num_combo.bind('<<ComboboxSelected>>', lambda e: (self.oacd.set_factor_num(int(factor_num_combo.get())), self._oacd_update_extrenum_table()))
 
         ttk.Label(left_frame, text="Table Size:", font=self.label_font).pack(anchor='w', pady=(0,2))
-        table_size_combo = ttk.Combobox(left_frame, textvariable=self.oacd_table_size, state="readonly", font=self.entry_font, width=8)
+        table_size_combo = ttk.Combobox(left_frame,state="readonly", font=self.entry_font, width=8)
         table_size_combo['values'] = ["Small", "Medium", "Large"]
+        try:
+            table_size_combo.set(self.oacd.table_size)
+        except Exception:
+            pass
         table_size_combo.pack(anchor='w', pady=(0,8))
+        table_size_combo.bind('<<ComboboxSelected>>', lambda e: self.oacd.set_table_size(table_size_combo.get()))
 
         # --- Interactive Extrenum Table ---
         extrenum_frame = ttk.LabelFrame(left_frame, text="Factor Min/Max (Extrenum)", padding=(8,6,8,8))
@@ -2362,12 +2370,12 @@ class CSRApp:
         set_all_frame.pack(fill='x', pady=(5,8))
         ttk.Label(set_all_frame, text="Set all min:").pack(side='left')
         self.oacd_set_all_min = tk.DoubleVar(value=0.0)
-        min_entry = ttk.Entry(set_all_frame, textvariable=self.oacd_set_all_min, width=7, font=self.entry_font)
+        min_entry = tk.Entry(set_all_frame, textvariable=self.oacd_set_all_min, width=7, font=self.entry_font, insertwidth=1, insertontime=500, insertofftime=500)
         min_entry.pack(side='left', padx=(2,8))
         ttk.Button(set_all_frame, text="Apply", command=self._oacd_apply_all_min, width=6).pack(side='left')
         ttk.Label(set_all_frame, text="Set all max:").pack(side='left', padx=(10,0))
         self.oacd_set_all_max = tk.DoubleVar(value=0.0)
-        max_entry = ttk.Entry(set_all_frame, textvariable=self.oacd_set_all_max, width=7, font=self.entry_font)
+        max_entry = tk.Entry(set_all_frame, textvariable=self.oacd_set_all_max, width=7, font=self.entry_font, insertwidth=1, insertontime=500, insertofftime=500)
         max_entry.pack(side='left', padx=(2,8))
         ttk.Button(set_all_frame, text="Apply", command=self._oacd_apply_all_max, width=6).pack(side='left')
 
@@ -2376,9 +2384,33 @@ class CSRApp:
         max_nonzero_frame.pack(fill='x', pady=(5,8))
         ttk.Label(max_nonzero_frame, text="Max Nonzero Factors:").pack(side='left')
         self.oacd_max_nonzero_var = tk.IntVar(value=0)
-        max_nonzero_entry = ttk.Entry(max_nonzero_frame, textvariable=self.oacd_max_nonzero_var, width=7, font=self.entry_font)
+        max_nonzero_entry = tk.Entry(max_nonzero_frame, textvariable=self.oacd_max_nonzero_var, width=7, font=self.entry_font, insertwidth=1, insertontime=500, insertofftime=500)
         max_nonzero_entry.pack(side='left', padx=(2,8))
         ttk.Button(max_nonzero_frame, text="Apply", command=self._oacd_apply_max_nonzero, width=8).pack(side='left')
+
+        # --- Limit Management Controls ---
+        limit_frame = ttk.LabelFrame(left_frame, text="Factor Limits", padding=(8,6,8,8))
+        limit_frame.pack(fill='x', pady=(10,8))
+        
+        # Limit value input
+        limit_input_frame = ttk.Frame(limit_frame, style="App.TFrame")
+        limit_input_frame.pack(fill='x', pady=(0,5))
+        ttk.Label(limit_input_frame, text="Limit Value:").pack(side='left')
+        self.oacd_limit_value = tk.DoubleVar(value=100.0)
+        limit_value_entry = tk.Entry(limit_input_frame, textvariable=self.oacd_limit_value, width=8, font=self.entry_font, insertwidth=1, insertontime=500, insertofftime=500)
+        limit_value_entry.pack(side='left', padx=(2,8))
+        ttk.Button(limit_input_frame, text="Add Limit", command=self._oacd_add_limit, width=8).pack(side='left')
+        
+        # Current limits display
+        limits_display_frame = ttk.Frame(limit_frame, style="App.TFrame")
+        limits_display_frame.pack(fill='x', pady=(5,0))
+        ttk.Label(limits_display_frame, text="Current Limits:").pack(anchor='w')
+        self.oacd_limits_listbox = tk.Listbox(limits_display_frame, height=4, font=self.entry_font)
+        self.oacd_limits_listbox.pack(fill='x', pady=(2,5))
+        limits_button_frame = ttk.Frame(limits_display_frame, style="App.TFrame")
+        limits_button_frame.pack(fill='x')
+        ttk.Button(limits_button_frame, text="Remove Selected", command=self._oacd_remove_limit, width=12).pack(side='left')
+        ttk.Button(limits_button_frame, text="Clear All", command=self._oacd_clear_limits, width=8).pack(side='left', padx=(5,0))
 
         # --- Generate and Export Buttons ---
         button_frame = ttk.Frame(left_frame, style="App.TFrame")
@@ -2403,28 +2435,32 @@ class CSRApp:
         # Clear previous widgets
         for widget in self.oacd_extrenum_table_frame.winfo_children():
             widget.destroy()
-        self.oacd_extrenum_vars = []
-        n = self.oacd_factor_num.get() if hasattr(self, 'oacd_factor_num') else 2
+        self.oacd.extrenum_vars = []
+        n = self.oacd.factor_num if getattr(self.oacd, 'factor_num', None) is not None else 2
         # Header
         ttk.Label(self.oacd_extrenum_table_frame, text="Factor", width=8).grid(row=0, column=0, padx=2, pady=2)
         ttk.Label(self.oacd_extrenum_table_frame, text="Min", width=8).grid(row=0, column=1, padx=2, pady=2)
         ttk.Label(self.oacd_extrenum_table_frame, text="Max", width=8).grid(row=0, column=2, padx=2, pady=2)
+        ttk.Label(self.oacd_extrenum_table_frame, text="Limit", width=8).grid(row=0, column=3, padx=2, pady=2)
         for i in range(n):
             ttk.Label(self.oacd_extrenum_table_frame, text=f"F{i+1}", width=8).grid(row=i+1, column=0, padx=2, pady=2)
             min_var = tk.DoubleVar(value=0.0)
             max_var = tk.DoubleVar(value=0.0)
-            min_entry = ttk.Entry(self.oacd_extrenum_table_frame, textvariable=min_var, width=8, font=self.entry_font)
-            max_entry = ttk.Entry(self.oacd_extrenum_table_frame, textvariable=max_var, width=8, font=self.entry_font)
+            min_entry = tk.Entry(self.oacd_extrenum_table_frame, textvariable=min_var, width=8, font=self.entry_font, insertwidth=1, insertontime=500, insertofftime=500)
+            max_entry = tk.Entry(self.oacd_extrenum_table_frame, textvariable=max_var, width=8, font=self.entry_font, insertwidth=1, insertontime=500, insertofftime=500)
+            
             min_entry.grid(row=i+1, column=1, padx=2, pady=2)
             max_entry.grid(row=i+1, column=2, padx=2, pady=2)
-            self.oacd_extrenum_vars.append((min_var, max_var))
+            self.oacd.extrenum_vars.append((min_var, max_var))
+            
+        self._oacd_update_limit_factor_selection()
 
     def _oacd_apply_all_min(self):
-        for min_var, _ in self.oacd_extrenum_vars:
+        for min_var, _ in self.oacd.extrenum_vars:
             min_var.set(self.oacd_set_all_min.get())
 
     def _oacd_apply_all_max(self):
-        for _, max_var in self.oacd_extrenum_vars:
+        for _, max_var in self.oacd.extrenum_vars:
             max_var.set(self.oacd_set_all_max.get())
 
     def _oacd_apply_max_nonzero(self):
@@ -2438,20 +2474,19 @@ class CSRApp:
 
     def _oacd_generate_table(self):
         # Set up OACD object
-        n = self.oacd_factor_num.get()
-        self.oacd.set_factor_num(n)
-        self.oacd.set_table_size(self.oacd_table_size.get())
+        print(self.oacd.limits)
+        n = self.oacd.factor_num
         # Build extrenum DataFrame from UI
         extrenum = np.zeros((n,2))
-        for i, (min_var, max_var) in enumerate(self.oacd_extrenum_vars):
+        for i, (min_var, max_var) in enumerate(self.oacd.extrenum_vars):
             extrenum[i,0] = min_var.get()
             extrenum[i,1] = max_var.get()
         self.oacd.set_factor_extrenum(pd.DataFrame(extrenum))
         result = self.oacd.build_table()
-        print(self.oacd.table)
         if result != 1:
             messagebox.showerror("Error", "Failed to build OACD table. Check factor number and table size.")
             return
+        self.oacd.normalize_table()
         self._oacd_display_table()
 
     def _oacd_display_table(self):
@@ -2486,16 +2521,116 @@ class CSRApp:
             return
         try:
             df = pd.read_excel(file_path, header=None)
-            n = self.oacd_factor_num.get()
+            n = self.oacd.factor_num
             if df.shape != (n, 2):
                 messagebox.showerror("Import Error", f"Extrenum table must have {n} rows and 2 columns (min, max).\nImported shape: {df.shape}")
                 return
             # Update UI variables
             for i in range(n):
-                self.oacd_extrenum_vars[i][0].set(df.iloc[i,0])
-                self.oacd_extrenum_vars[i][1].set(df.iloc[i,1])
+                self.oacd.extrenum_vars[i][0].set(df.iloc[i,0])
+                self.oacd.extrenum_vars[i][1].set(df.iloc[i,1])
         except Exception as e:
             messagebox.showerror("Import Error", f"Failed to import extrenum table:\n{str(e)}")
+            
+    def _oacd_update_limit_factor_selection(self):
+        """Update the factor selection checkboxes for limits"""
+        # Check if the limit factor frame exists (UI might not be fully initialized yet)
+        if not hasattr(self, 'oacd_extrenum_table_frame') or self.oacd_extrenum_table_frame is None:
+            return
+        
+        n = self.oacd.factor_num if getattr(self.oacd, 'factor_num', None) is not None else 2
+        
+        # Clear existing comboboxes if they exist
+        if hasattr(self, 'factor_combo'):
+            for combo in self.factor_combo:
+                if combo.winfo_exists():
+                    combo.destroy()
+        
+        self.factor_combo = []
+        
+        # Create comboboxes for each factor
+        for i in range(n):
+            # Create combobox for factor limit selection
+            combo = ttk.Combobox(self.oacd_extrenum_table_frame, state="readonly", font=self.entry_font, width=20)
+            combo['values'] = list(self.oacd.limit_names.values())
+            combo.grid(row=i+1, column=3, padx=(2,5))
+            combo.current(0)
+            
+            # Bind the selection event with the correct factor index
+            combo.bind('<<ComboboxSelected>>', lambda e, factor_idx=i: self._oacd_combo_select(factor_idx))
+            
+            # Add to the list of comboboxes
+            self.factor_combo.append(combo)
+    
+    def _oacd_combo_select(self, i):
+        # Get the combobox for the specific factor
+        if i < len(self.factor_combo):
+            combo = self.factor_combo[i]
+            
+            limit_key = next((key for key, value in self.oacd.limit_names.items() if value == combo.get()), None)
+            if limit_key is None:
+                name_entry = None
+                index_entry = None
+            else:
+                name_entry = float(limit_key.split("_")[0])
+                index_entry = int(limit_key.split("_")[1])
+            self.oacd.add_limit([i], name_entry, index=index_entry)
+    
+    def _oacd_add_limit(self):
+        """Add a new limit with selected factors"""
+            
+        limit_value = self.oacd_limit_value.get()
+        if limit_value <= 0:
+            messagebox.showwarning("Invalid Value", "Limit value must be positive.")
+            return
+            
+        # Add limit to OACD object
+        self.oacd.add_limit([], limit_value)
+        
+        # Update limits display
+        self._oacd_update_limit_factor_selection()
+        self._oacd_update_limits_display()
+    
+    def _oacd_remove_limit(self):
+        """Remove the selected limit"""
+        # Check if limits listbox exists
+        if not hasattr(self, 'oacd_limits_listbox'):
+            messagebox.showwarning("UI Not Ready", "Please wait for the UI to fully load.")
+            return
+            
+        selection = self.oacd_limits_listbox.curselection()
+        if not selection:
+            messagebox.showwarning("No Selection", "Please select a limit to remove.")
+            return
+            
+        # Get the limit key from the listbox
+        limit_name = list(self.oacd.limit_names.keys())[selection[0] + 1]
+        
+        self.oacd.remove_limit(limit_name)
+            
+        # Update limits display
+        self._oacd_update_limits_display()
+        self._oacd_update_limit_factor_selection()
+    
+    def _oacd_clear_limits(self):
+        """Clear all limits"""
+        if messagebox.askyesno("Clear All Limits", "Are you sure you want to clear all limits?"):
+            # Clear all limit columns
+            self.oacd.remove_all_limits()
+            self._oacd_update_limits_display()
+            self._oacd_update_limit_factor_selection()
+    
+    def _oacd_update_limits_display(self):
+        """Update the limits listbox display"""
+        # Check if limits listbox exists
+        if not hasattr(self, 'oacd_limits_listbox'):
+            return
+            
+        self.oacd_limits_listbox.delete(0, tk.END)
+        
+        limits_names = list(self.oacd.limit_names.values())
+        for name in limits_names:
+            self.oacd_limits_listbox.insert(tk.END, name)
 
 if __name__ == "__main__":
     root = tk.Tk()

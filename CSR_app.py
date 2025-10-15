@@ -502,7 +502,7 @@ class CSRApp:
             return
         
         # Get all column names in order
-        all_columns = list(self.df.columns)
+        all_columns = [col for col in list(self.df.columns) if col != 'residual']
         
         # Add combobox for all features
         cb_options = ["factor", "result", "ignore"]

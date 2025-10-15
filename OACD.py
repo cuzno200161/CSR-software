@@ -299,8 +299,6 @@ class OACD:
         # Check if changing limit on factor to None
         if limit is None and factors:
             self.limits.iloc[factors, 0] = None;
-            print(self.limits)
-            print(self.limit_names)
             return
         
         while (str(limit) + "_" + str(str_index)) in self.limit_names.keys():
@@ -314,9 +312,6 @@ class OACD:
             # Apply limit to factors
             self.limits.iloc[factors, 0] = str(limit) + "_" + str(str_index);
         self.limit_names.update({str(limit) + "_" + str(str_index) : "Limit: " + str(limit) + " | Entry " + str(str_index)})
-            
-        print(self.limits)
-        print(self.limit_names)
     
     def remove_limit(self, limit_name):
         """
@@ -368,22 +363,23 @@ class OACD:
     
 
 if __name__ == "__main__":
-    oacd = OACD();
-    oacd.set_table_size("Small");
-    oacd.set_factor_num(3);
-    oacd.set_extrenum(0, 0, "min")
-    oacd.set_extrenum(100, 0, "max")
-    oacd.set_extrenum(0, 1, "min")
-    oacd.set_extrenum(100, 1, "max")
-    oacd.set_extrenum(0, 2, "min")
-    oacd.set_extrenum(100, 2, "max")
-    oacd.add_limit([0, 1, 2], 100)
-    oacd.add_limit([0, 1, 2], 100)
-    oacd.add_limit([0, 2], 100, 0)
-    oacd.build_table()
-    print(oacd.table)
-    # oacd.remove_limit("100_0")
-    oacd.normalize_table()
-    print(oacd.table)
-    print(oacd.limit_names)
+    # oacd = OACD();
+    # oacd.set_table_size("Small");
+    # oacd.set_factor_num(3);
+    # oacd.set_extrenum(0, 0, "min")
+    # oacd.set_extrenum(100, 0, "max")
+    # oacd.set_extrenum(0, 1, "min")
+    # oacd.set_extrenum(100, 1, "max")
+    # oacd.set_extrenum(0, 2, "min")
+    # oacd.set_extrenum(100, 2, "max")
+    # oacd.add_limit([0, 1, 2], 100)
+    # oacd.add_limit([0, 1, 2], 100)
+    # oacd.add_limit([0, 2], 100, 0)
+    # oacd.build_table()
+    # print(oacd.table)
+    # # oacd.remove_limit("100_0")
+    # oacd.normalize_table()
+    # print(oacd.table)
+    # print(oacd.limit_names)
+    pass
     

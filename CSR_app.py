@@ -2490,7 +2490,7 @@ class CSRApp:
         self._oacd_display_table()
 
     def _oacd_display_table(self):
-        # Clear previous
+        # Display the table
         for col in self.oacd_table_tree.get_children():
             self.oacd_table_tree.delete(col)
         columns = ["Run"] + [f"F{i+1}" for i in range(self.oacd.table.shape[1])]

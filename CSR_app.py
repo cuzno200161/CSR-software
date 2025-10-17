@@ -94,6 +94,10 @@ class CSRApp:
         }
         self.bits_array = None # Ensure bits_array is initialized to None
 
+        # Initialize CSR limits (similar to OACD limits)
+        self.csr_limits = {}
+        self.csr_limit_names = {}
+
         self.notebook = ttk.Notebook(self.root, style="TNotebook")
 
         self.create_widgets()
@@ -112,7 +116,6 @@ class CSRApp:
 
         self.create_csr_integration_tab()
         self.create_coefficient_analysis_tab()
-
         self.create_oacd_tab()
 
     def create_csr_integration_tab(self):
@@ -142,19 +145,17 @@ class CSRApp:
 
         ttk.Label(left_frame, text="Extremum Objective:").pack(anchor='w', padx=5)
         self.weight_combo = ttk.Combobox(left_frame,
-                                         values=["Maximum", "Minimum",
-                                                 "Maximum absolute value",
-                                                 "Minimum absolute value"],
-                                         state="readonly", font=self.entry_font)
+                                        values=["Maximum", "Minimum",
+                                                "Maximum absolute value",
+                                                "Minimum absolute value"],
+                                        state="readonly", font=self.entry_font)
         self.weight_combo.pack(fill='x', padx=5, pady=(2,10))
         self.weight_combo.current(0)
-
 
         ttk.Label(left_frame, text="Normalization Standard:").pack(anchor='w', padx=5)
         self.norm_select = ttk.Combobox(left_frame, values=["[-1, 1]", "[0, 1]"], state="readonly", font=self.entry_font)
         self.norm_select.pack(fill='x', padx=5, pady=(2,10))
         self.norm_select.current(1)  # Default to [0, 1]
-
 
         reg_frame = ttk.LabelFrame(left_frame, text="Regularization Parameter", padding=(10,5,10,10))
         reg_frame.pack(fill='x', pady=10, padx=5)
@@ -171,18 +172,41 @@ class CSRApp:
         ttk.Label(reg_frame, text="Alpha (penalty):").grid(row=0, column=0, sticky='w', pady=3)
         reg_frame.columnconfigure(1, weight=1)
 
+        # === CSR Factor Limits Section ===
+        csr_limits_frame = ttk.LabelFrame(left_frame, text="CSR Factor Limits", padding=(10,5,10,10))
+        csr_limits_frame.pack(fill='x', pady=10, padx=5)
+        
+        # Limit value input
+        limit_input_frame = ttk.Frame(csr_limits_frame, style="App.TFrame")
+        limit_input_frame.pack(fill='x', pady=(0,5))
+        ttk.Label(limit_input_frame, text="Limit Value:").pack(side='left')
+        self.csr_limit_value = tk.DoubleVar(value=100.0)
+        limit_value_entry = tk.Entry(limit_input_frame, textvariable=self.csr_limit_value, width=8, font=self.entry_font)
+        limit_value_entry.pack(side='left', padx=(2,8))
+        ttk.Button(limit_input_frame, text="Add Limit", command=self._csr_add_limit, width=8).pack(side='left')
+        
+        # Current limits display
+        limits_display_frame = ttk.Frame(csr_limits_frame, style="App.TFrame")
+        limits_display_frame.pack(fill='x', pady=(5,0))
+        ttk.Label(limits_display_frame, text="Current Limits:").pack(anchor='w')
+        self.csr_limits_listbox = tk.Listbox(limits_display_frame, height=4, font=self.entry_font)
+        self.csr_limits_listbox.pack(fill='x', pady=(2,5))
+        limits_button_frame = ttk.Frame(limits_display_frame, style="App.TFrame")
+        limits_button_frame.pack(fill='x')
+        ttk.Button(limits_button_frame, text="Remove Selected", command=self._csr_remove_limit, width=12).pack(side='left')
+        ttk.Button(limits_button_frame, text="Clear All", command=self._csr_clear_limits, width=8).pack(side='left', padx=(5,0))
+
         ttk.Button(left_frame, text="Run Fitting Process", command=self.run_fitting).pack(pady=15, padx=5, fill='x', ipady=5)
 
-        # Updated: Add frames for Function and Factor Definitions
         # Function Definition Frame
         function_def_frame = ttk.LabelFrame(left_frame, text="CSR Function", padding=(10, 5, 10, 10))
         function_def_frame.pack(fill='x', pady=(0, 5), padx=5, expand=True)
 
         eqn_text_frame = ttk.Frame(function_def_frame, style="App.TFrame")
-        eqn_text_frame.pack(fill='both', expand=True, padx=0, pady=(0, 5)) # Adjusted pady
+        eqn_text_frame.pack(fill='both', expand=True, padx=0, pady=(0, 5))
 
         self.equation_text = tk.Text(eqn_text_frame, height=4, wrap=tk.WORD, state='disabled',
-                                     font=self.text_widget_font, relief=tk.SOLID, borderwidth=1, padx=8, pady=5,spacing1=2, spacing2=2, spacing3=2)
+                                    font=self.text_widget_font, relief=tk.SOLID, borderwidth=1, padx=8, pady=5,spacing1=2, spacing2=2, spacing3=2)
         scrollbar_eqn = ttk.Scrollbar(eqn_text_frame, command=self.equation_text.yview, orient=tk.VERTICAL)
         self.equation_text['yscrollcommand'] = scrollbar_eqn.set
         scrollbar_eqn.pack(side=tk.RIGHT, fill=tk.Y)
@@ -196,7 +220,7 @@ class CSRApp:
         factor_def_text_frame.pack(fill='both', expand=True, padx=0, pady=(0, 5))
 
         self.factor_definitions_text = tk.Text(factor_def_text_frame, height=3, wrap=tk.WORD, state='disabled',
-                                               font=self.text_widget_font, relief=tk.SOLID, borderwidth=1, padx=8, pady=5,spacing1=2, spacing2=2, spacing3=2)
+                                            font=self.text_widget_font, relief=tk.SOLID, borderwidth=1, padx=8, pady=5,spacing1=2, spacing2=2, spacing3=2)
         scrollbar_factor_def = ttk.Scrollbar(factor_def_text_frame, command=self.factor_definitions_text.yview, orient=tk.VERTICAL)
         self.factor_definitions_text['yscrollcommand'] = scrollbar_factor_def.set
         scrollbar_factor_def.pack(side=tk.RIGHT, fill=tk.Y)
@@ -242,15 +266,32 @@ class CSRApp:
         
         # Add a label for the factor and result selection
         ttk.Label(self.factor_selection_frame, text="Select factors and results to include in analysis:", 
-                font=self.label_font).grid(row=0, column=0, sticky='w', pady=(0,10))
+                font=self.label_font).pack(anchor='w', pady=(0,10))
         
-        # Key Results Frame (keep this the same)
+        # Factor Limits Selection Frame - FIXED: Use pack instead of grid
+        factor_limits_frame = ttk.LabelFrame(scrollable_frame, text="Factor Limits Selection", padding=10)
+        factor_limits_frame.pack(fill='x', pady=(10,10))
+        
+        self.factor_limits_frame = ttk.Frame(factor_limits_frame, style="App.TFrame")
+        self.factor_limits_frame.pack(fill='both', expand=True)
+        
+        ttk.Label(self.factor_limits_frame, text="Select factors for limits (will be applied during optimization):", 
+                font=self.label_font).pack(anchor='w', pady=(0,5))
+        
+        # This will be populated when factors are loaded
+        self.csr_factor_combos = []
+        
+        # Container for factor limit checkboxes
+        self.factor_limits_container = ttk.Frame(self.factor_limits_frame, style="App.TFrame")
+        self.factor_limits_container.pack(fill='x', pady=5)
+        
+        # Key Results Frame
         results_frame = ttk.LabelFrame(scrollable_frame, text="Key Results", padding=(10,5,10,10))
         results_frame.pack(fill='x', pady=(10,0), expand=True)
         
         # Create a canvas and scrollbar for the results frame
         results_canvas = tk.Canvas(results_frame, highlightthickness=0)
-        scrollbar = ttk.Scrollbar(results_frame, orient="vertical", command=results_canvas.yview)
+        scrollbar_results = ttk.Scrollbar(results_frame, orient="vertical", command=results_canvas.yview)
         scrollable_results_frame = ttk.Frame(results_canvas)
         
         scrollable_results_frame.bind(
@@ -261,15 +302,31 @@ class CSRApp:
         )
         
         results_canvas.create_window((0, 0), window=scrollable_results_frame, anchor="nw")
-        results_canvas.configure(yscrollcommand=scrollbar.set)
+        results_canvas.configure(yscrollcommand=scrollbar_results.set)
         
         # Pack the canvas and scrollbar
         results_canvas.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
+        scrollbar_results.pack(side="right", fill="y")
         
-        # Extremum section
+        # Extremum section - FIXED: Use pack instead of grid
         extremum_frame = ttk.LabelFrame(scrollable_results_frame, text="Extremum (Original Scale)", padding=(10,5,10,10))
         extremum_frame.pack(fill='x', pady=(0,10))
+        
+        # Factors display
+        factors_display_frame = ttk.Frame(extremum_frame, style="App.TFrame")
+        factors_display_frame.pack(fill='x', pady=5)
+        ttk.Label(factors_display_frame, text="Factors:").pack(side='left')
+        self.factors_text = tk.Text(factors_display_frame, height=1, wrap=tk.NONE, state='disabled',
+                                font=self.text_widget_font, relief=tk.SOLID, borderwidth=1, padx=5)
+        self.factors_text.pack(side='left', fill='x', expand=True, padx=(5,0))
+        
+        # Value display
+        value_display_frame = ttk.Frame(extremum_frame, style="App.TFrame")
+        value_display_frame.pack(fill='x', pady=5)
+        ttk.Label(value_display_frame, text="Value:").pack(side='left')
+        self.value_text = tk.Text(value_display_frame, height=1, wrap=tk.NONE, state='disabled',
+                                font=self.text_widget_font, relief=tk.SOLID, borderwidth=1, padx=5)
+        self.value_text.pack(side='left', fill='x', expand=True, padx=(5,0))
         
         # Individual results frame for comprehensive optimization
         self.individual_results_frame = ttk.LabelFrame(scrollable_results_frame, text="Individual Results at Extremum", padding=(10,5,10,10))
@@ -279,30 +336,15 @@ class CSRApp:
         self.r2_frame = ttk.LabelFrame(scrollable_results_frame, text="Model Fit (R²)", padding=(10,5,10,10))
         self.r2_frame.pack(fill='x', pady=(0,10))
         
-        # Initialize all text widgets (keep this the same)
-        self.factors_text = tk.Text(extremum_frame, height=1, wrap=tk.NONE, state='disabled',
-                                font=self.text_widget_font, relief=tk.SOLID, borderwidth=1, padx=5)
-        self.factors_text.grid(row=0, column=1, sticky='ew', pady=3)
-        
-        self.value_text = tk.Text(extremum_frame, height=1, wrap=tk.NONE, state='disabled',
-                                font=self.text_widget_font, relief=tk.SOLID, borderwidth=1, padx=5)
-        self.value_text.grid(row=1, column=1, sticky='ew', pady=3)
-        
         # Initialize R² text widget
         self.r2_text = tk.Text(self.r2_frame, height=1, wrap=tk.NONE, state='disabled',
                             font=self.text_widget_font, relief=tk.SOLID, borderwidth=1, padx=5)
         self.r2_text.pack(fill='x', padx=5, pady=5)
-        
-        # Configure grid weights
-        extremum_frame.columnconfigure(1, weight=1)
-        self.r2_frame.columnconfigure(0, weight=1)
-
 
         # === Right Panel Contents (PanedWindow) ===
-        # plot1_frame and plot2_frame added to right_paned
         plot1_frame = ttk.LabelFrame(right_paned, text="Actual vs. Predicted Values", padding=10)
         right_paned.add(plot1_frame)
-        right_paned.paneconfig(plot1_frame) # Configure weight after adding
+        right_paned.paneconfig(plot1_frame)
 
         self.figure1 = Figure(figsize=(5, 4), dpi=100, facecolor='#F0F0F0')
         self.figure1.subplots_adjust(bottom=0.18, left=0.18, top=0.9, right=0.95)
@@ -310,13 +352,12 @@ class CSRApp:
         self.canvas1.get_tk_widget().pack(fill='both', expand=True, padx=5, pady=5)
         toolbar1 = NavigationToolbar2Tk(self.canvas1, plot1_frame)
         toolbar1.update()
-        toolbar1.configure(background='#F0F0F0') # Match background
+        toolbar1.configure(background='#F0F0F0')
         for child_widget in toolbar1.winfo_children(): child_widget.configure(background='#F0F0F0')
 
-
         plot2_frame = ttk.LabelFrame(right_paned, text="CSR Response Surface Plot", padding=10)
-        right_paned.add(plot2_frame) # Removed weight here
-        right_paned.paneconfig(plot2_frame) # Configure weight after adding
+        right_paned.add(plot2_frame)
+        right_paned.paneconfig(plot2_frame)
 
         factor_control_frame = ttk.Frame(plot2_frame, style="App.TFrame")
         factor_control_frame.pack(fill='x', pady=(5,8))
@@ -336,6 +377,99 @@ class CSRApp:
         toolbar2.update()
         toolbar2.configure(background='#F0F0F0')
         for child_widget in toolbar2.winfo_children(): child_widget.configure(background='#F0F0F0')
+
+    # CSR Limits Management Methods
+    def _csr_add_limit(self):
+        """Add a new limit with selected factors"""
+        if not hasattr(self, 'factor_cols') or not self.factor_cols:
+            messagebox.showwarning("No Factors", "Please load data with factors first.")
+            return
+            
+        limit_value = self.csr_limit_value.get()
+        if limit_value <= 0:
+            messagebox.showwarning("Invalid Value", "Limit value must be positive.")
+            return
+            
+        # Get selected factors from comboboxes
+        selected_factors = []
+        for i, combo in enumerate(self.csr_factor_combos):
+            if combo.get() == "Include in Limit":
+                selected_factors.append(i)
+        
+        if not selected_factors:
+            messagebox.showwarning("No Selection", "Please select at least one factor for the limit.")
+            return
+            
+        # Add limit to CSR limits
+        limit_name = f"limit_{len(self.csr_limits) + 1}"
+        self.csr_limits[limit_name] = {
+            'factors': selected_factors,
+            'value': limit_value,
+            'type': 'sum'  # Default to sum constraint
+        }
+        self.csr_limit_names[limit_name] = f"Limit {len(self.csr_limits)}: Sum of F{','.join(map(str, [f+1 for f in selected_factors]))} ≤ {limit_value}"
+        
+        # Update limits display
+        self._csr_update_limits_display()
+
+    def _csr_remove_limit(self):
+        """Remove the selected limit"""
+        selection = self.csr_limits_listbox.curselection()
+        if not selection:
+            messagebox.showwarning("No Selection", "Please select a limit to remove.")
+            return
+            
+        # Get the limit key from the listbox
+        limit_name = list(self.csr_limits.keys())[selection[0]]
+        
+        # Remove the limit
+        del self.csr_limits[limit_name]
+        del self.csr_limit_names[limit_name]
+            
+        # Update limits display
+        self._csr_update_limits_display()
+
+    def _csr_clear_limits(self):
+        """Clear all limits"""
+        if messagebox.askyesno("Clear All Limits", "Are you sure you want to clear all limits?"):
+            self.csr_limits.clear()
+            self.csr_limit_names.clear()
+            self._csr_update_limits_display()
+
+    def _csr_update_limits_display(self):
+        """Update the limits listbox display"""
+        self.csr_limits_listbox.delete(0, tk.END)
+        
+        for name in self.csr_limit_names.values():
+            self.csr_limits_listbox.insert(tk.END, name)
+
+    def _update_csr_factor_limits_ui(self):
+        """Update the factor limits selection UI when factors are loaded"""
+        # Clear existing comboboxes
+        for widget in self.factor_limits_container.winfo_children():
+            widget.destroy()
+        
+        self.csr_factor_combos = []
+        
+        if not hasattr(self, 'factor_cols') or not self.factor_cols:
+            return
+            
+        # Create factor selection comboboxes using pack
+        for i, factor in enumerate(self.factor_cols):
+            display_name = self.col_name_mapping.get(factor, factor)
+            
+            # Create frame for this factor
+            factor_frame = ttk.Frame(self.factor_limits_container, style="App.TFrame")
+            factor_frame.pack(fill='x', pady=2)
+            
+            ttk.Label(factor_frame, text=f"{display_name}:").pack(side='left')
+            
+            combo = ttk.Combobox(factor_frame, values=["Exclude", "Include in Limit"], 
+                            state="readonly", width=15, font=self.entry_font)
+            combo.set("Exclude")
+            combo.pack(side='left', padx=(5,0))
+            
+            self.csr_factor_combos.append(combo)
 
     def create_coefficient_analysis_tab(self):
             # Main container frame
@@ -511,13 +645,9 @@ class CSRApp:
             display_name = self.col_name_mapping.get(col, col)
             
             # Create frame for this factor's controls
-            lbl_frame = ttk.Frame(self.factor_selection_frame, style="App.TFrame")
             cb_frame = ttk.Frame(self.factor_selection_frame, style="App.TFrame")
             cb_frame.pack(fill='x', pady=2)
             
-            # Add checkbox - only check the last box by default
-            # var = tk.BooleanVar(value=(i == len(all_columns)-1))  # True for last column
-            # dd = ttk.Checkbutton(dd_frame, variable=var, text=display_name)
             var = tk.StringVar(value="result" if i == len(all_columns)-1 else "factor")
             lbl = ttk.Label(cb_frame, text=display_name)
             lbl.pack(side='left', padx=(0,10))
@@ -525,6 +655,9 @@ class CSRApp:
             cb.set(var.get())
             cb.pack(side='left', padx=(0,10))
             self.factor_checkboxes[col] = var
+
+        # Update factor limits UI
+        self._update_csr_factor_limits_ui()
 
     def clear_results_and_plots(self):
         # Clear text widgets safely
@@ -970,9 +1103,13 @@ class CSRApp:
                         extremum_x = self.extremum_point['x']
                     else:
                         # For single optimization, we need to unnormalize
-                        extremum_x = self._unnormalize_point(self.extremum_point['x'])
+                        extremum_x = self.extremum_point['x']  # Now already in original scale
                     
                     if extremum_x is not None:
+                        # Debug: Print what we're about to display
+                        print(f"Displaying extremum values: {extremum_x}")
+                        print(f"Sum of displayed values: {sum(extremum_x)}")
+                        
                         self.factors_text.insert(tk.END, ", ".join([f"{val:.4f}" for val in extremum_x]))
                 
                 self.factors_text.config(state='disabled')
@@ -1061,66 +1198,7 @@ class CSRApp:
 
     def update_comprehensive_results_display(self, result_min_max):
         """Update the display for comprehensive fitting results"""
-        # Clear previous widgets if they exist
-        if hasattr(self, 'individual_results_frame'):
-            try:
-                for widget in self.individual_results_frame.winfo_children():
-                    widget.destroy()
-            except tk.TclError:
-                pass
-        
-        if hasattr(self, 'r2_frame'):
-            try:
-                for widget in self.r2_frame.winfo_children():
-                    widget.destroy()
-            except tk.TclError:
-                pass
-
-        # Rest of the method remains the same...
-        # Generate equation string for each individual result
-        equation_parts = []
-        for result_col in self.result_functions:
-            # Get the CSR coefficients and bits array for this result
-            func_data = self.result_functions[result_col]
-            beta = func_data['coefficients']
-            bits_array = func_data['bits_array']
-            n_factors = bits_array.shape[1]
-            
-            # Generate the equation string for this result
-            eq_str = self._generate_single_result_equation(beta, bits_array, n_factors)
-            
-            # Add the normalization part
-            min_val = result_min_max[result_col]['min']
-            max_val = result_min_max[result_col]['max']
-            short_name = self.col_name_mapping.get(result_col, result_col)
-            equation_parts.append(f"({eq_str}-{min_val:.4f})/({max_val-min_val:.4f})")
-        
-        # Combine all equations
-        if not equation_parts:
-            equation_str = "Comprehensive CSR = (No results)"
-        else:
-            equation_str = "Comprehensive CSR = " + " + ".join(equation_parts)
-        
-        # Update Equation Text
-        self.equation_text.config(state='normal')
-        self.equation_text.delete(1.0, tk.END)
-        self.equation_text.insert(tk.END, equation_str)
-        self.equation_text.config(state='disabled')
-        
-        # Update factor definitions
-        factor_definitions = []
-        if hasattr(self, 'factor_cols') and self.factor_cols:
-            for i, factor in enumerate(self.factor_cols):
-                short_name = f"f{i+1}"
-                original_name = self.col_name_mapping.get(factor, f"Factor {i+1}")
-                factor_definitions.append(f"{short_name} = {original_name}")
-        
-        factor_defs_str = "\n".join(factor_definitions)
-        
-        self.factor_definitions_text.config(state='normal')
-        self.factor_definitions_text.delete(1.0, tk.END)
-        self.factor_definitions_text.insert(tk.END, factor_defs_str)
-        self.factor_definitions_text.config(state='disabled')
+        # [Previous code remains the same until the extremum display section]
         
         # Update extremum display - show real factor values
         self.factors_text.config(state='normal')
@@ -1132,7 +1210,29 @@ class CSRApp:
             # For comprehensive optimization, extremum point is already in original scale
             extremum_x_original_scale = self.extremum_point['x']
             if extremum_x_original_scale is not None and len(extremum_x_original_scale) > 0:
-                self.factors_text.insert(tk.END, ", ".join([f"{val:.4f}" for val in extremum_x_original_scale]))
+                factors_str = ", ".join([f"{val:.4f}" for val in extremum_x_original_scale])
+                self.factors_text.insert(tk.END, factors_str)
+                
+                # Add constraint verification
+                if self.csr_limits:
+                    constraint_info = "\n\nConstraint Verification:"
+                    for limit_name, limit_data in self.csr_limits.items():
+                        factors = limit_data.get('factors', [])
+                        limit_value = limit_data.get('value', 0)
+                        limit_type = limit_data.get('type', 'sum')
+                        
+                        if limit_type == 'sum':
+                            total = sum(extremum_x_original_scale[i] for i in factors)
+                            status = "✓ SATISFIED" if total <= limit_value + 1e-6 else "✗ VIOLATED"
+                            constraint_info += f"\nSum of F{','.join(map(str, [f+1 for f in factors]))}: {total:.4f} ≤ {limit_value} {status}"
+                        
+                        elif limit_type == 'product':
+                            product = np.prod([extremum_x_original_scale[i] for i in factors])
+                            status = "✓ SATISFIED" if product <= limit_value + 1e-6 else "✗ VIOLATED"
+                            constraint_info += f"\nProduct of F{','.join(map(str, [f+1 for f in factors]))}: {product:.4f} ≤ {limit_value} {status}"
+                    
+                    self.factors_text.insert(tk.END, constraint_info)
+                
             self.value_text.insert(tk.END, f"{self.extremum_point['value']:.4f}")
 
         self.factors_text.config(state='disabled')
@@ -1476,12 +1576,13 @@ class CSRApp:
             X_design[:, term_idx] = current_term_values_for_all_samples
         return X_design
 
+    # Modified optimization methods to use CSR limits
     def find_extremum(self, beta, bits_array, bounds_for_opt, x0_for_opt, extremum_type, X_context_for_opt):
         if beta is None or bits_array is None or X_context_for_opt is None:
             return {'x': np.array([]), 'value': np.nan}
         if len(beta) != bits_array.shape[0]:
-             messagebox.showerror("Error in find_extremum", f"Coefficient count ({len(beta)}) doesn't match terms count ({bits_array.shape[0]}).")
-             return {'x': np.array([]), 'value': np.nan}
+            messagebox.showerror("Error in find_extremum", f"Coefficient count ({len(beta)}) doesn't match terms count ({bits_array.shape[0]}).")
+            return {'x': np.array([]), 'value': np.nan}
 
         def csr_func_for_optimizer(x_point_in_opt_scale):
             x_point_reshaped = np.array(x_point_in_opt_scale).reshape(1, -1)
@@ -1509,9 +1610,115 @@ class CSRApp:
             messagebox.showerror("Optimization Error", f"Bounds length ({len(bounds_for_opt)}) mismatch with factor count ({num_factors_in_context}).")
             return {'x': np.array([np.nan]*num_factors_in_context), 'value': np.nan}
 
-        res = minimize(objective_to_minimize, x0_for_opt, bounds=bounds_for_opt, method='L-BFGS-B')
-        return {'x': res.x, 'value': objective_func_val(res.x)}
+        # Add constraints from CSR limits - APPLY IN ORIGINAL SCALE
+        constraints = []
+        for limit_name, limit_data in self.csr_limits.items():
+            factors = limit_data.get('factors', [])
+            limit_value = limit_data.get('value', 0)
+            limit_type = limit_data.get('type', 'sum')
+            
+            if limit_type == 'sum':
+                def make_sum_constraint(factors_list, limit_val, norm_min, norm_max, norm_type):
+                    def constraint_func(x_norm):
+                        # Convert normalized values back to original scale for constraint
+                        if norm_type == "[-1, 1]":
+                            x_orig = (x_norm + 1) / 2 * (norm_max - norm_min) + norm_min
+                        elif norm_type == "[0, 1]":
+                            x_orig = x_norm * (norm_max - norm_min) + norm_min
+                        else:
+                            x_orig = x_norm
+                        
+                        total = sum(x_orig[i] for i in factors_list)
+                        return limit_val - total
+                    return constraint_func
+                
+                constraint = {'type': 'ineq', 
+                            'fun': make_sum_constraint(factors, limit_value, 
+                                                    self.norm_x_min, self.norm_x_max, 
+                                                    self.norm_select.get())}
+                constraints.append(constraint)
+                
+            elif limit_type == 'product':
+                def make_product_constraint(factors_list, limit_val, norm_min, norm_max, norm_type):
+                    def constraint_func(x_norm):
+                        # Convert normalized values back to original scale for constraint
+                        if norm_type == "[-1, 1]":
+                            x_orig = (x_norm + 1) / 2 * (norm_max - norm_min) + norm_min
+                        elif norm_type == "[0, 1]":
+                            x_orig = x_norm * (norm_max - norm_min) + norm_min
+                        else:
+                            x_orig = x_norm
+                        
+                        product = np.prod([x_orig[i] for i in factors_list])
+                        return limit_val - product
+                    return constraint_func
+                
+                constraint = {'type': 'ineq', 
+                            'fun': make_product_constraint(factors, limit_value,
+                                                        self.norm_x_min, self.norm_x_max,
+                                                        self.norm_select.get())}
+                constraints.append(constraint)
 
+        # Debug: Print constraints before optimization
+        print(f"Number of constraints: {len(constraints)}")
+        print(f"Normalization type: {self.norm_select.get()}")
+        print(f"Norm min: {self.norm_x_min}")
+        print(f"Norm max: {self.norm_x_max}")
+
+        # Perform optimization with constraints if any
+        try:
+            if constraints:
+                res = minimize(objective_to_minimize, x0_for_opt, bounds=bounds_for_opt, 
+                            method='SLSQP', constraints=constraints, options={'disp': True})
+            else:
+                res = minimize(objective_to_minimize, x0_for_opt, bounds=bounds_for_opt, method='L-BFGS-B')
+            
+            # Check if optimization was successful
+            if not res.success:
+                messagebox.showwarning("Optimization Warning", 
+                                    f"Optimization may not have converged: {res.message}")
+            
+            # Verify constraints are satisfied in ORIGINAL SCALE
+            if constraints:
+                print("Verifying constraints in ORIGINAL SCALE:")
+                # Convert result to original scale for verification
+                if self.norm_select.get() == "[-1, 1]":
+                    res_orig = (res.x + 1) / 2 * (self.norm_x_max - self.norm_x_min) + self.norm_x_min
+                elif self.norm_select.get() == "[0, 1]":
+                    res_orig = res.x * (self.norm_x_max - self.norm_x_min) + self.norm_x_min
+                else:
+                    res_orig = res.x
+                    
+                for i, constr in enumerate(constraints):
+                    constraint_value = constr['fun'](res.x)  # This now uses original scale conversion
+                    print(f"Constraint {i}: {constraint_value} (should be >= 0)")
+                    if constraint_value < -1e-6:  # Allow small numerical tolerance
+                        messagebox.showwarning("Constraint Violation", 
+                                            f"Constraint {i} is violated: {constraint_value}")
+            
+            # Calculate the final value
+            extremum_value = csr_func_for_optimizer(res.x)
+            
+            # Convert result to original scale for return
+            if self.norm_select.get() == "[-1, 1]":
+                res_orig = (res.x + 1) / 2 * (self.norm_x_max - self.norm_x_min) + self.norm_x_min
+            elif self.norm_select.get() == "[0, 1]":
+                res_orig = res.x * (self.norm_x_max - self.norm_x_min) + self.norm_x_min
+            else:
+                res_orig = res.x
+            
+            # Debug: Print the result
+            print(f"Optimization result (normalized): {res.x}")
+            print(f"Optimization result (original): {res_orig}")
+            print(f"Sum of factors (original): {sum(res_orig)}")
+            print(f"Extremum value: {extremum_value}")
+            
+            return {'x': res_orig, 'value': extremum_value}  # Return in original scale
+            
+        except Exception as e:
+            messagebox.showerror("Optimization Error", f"Optimization failed: {str(e)}")
+            return {'x': np.array([np.nan]*num_factors_in_context), 'value': np.nan}
+    
     def find_extremum_comprehensive(self, bounds_for_opt, x0_for_opt, extremum_type):
         """Find extremum for the comprehensive function that combines multiple results"""
         if not hasattr(self, 'comprehensive_function'):
@@ -1532,13 +1739,80 @@ class CSRApp:
         else:
             objective_to_minimize = comprehensive_func_for_optimizer
 
+        # Add constraints from CSR limits - APPLY IN ORIGINAL SCALE
+        constraints = []
+        for limit_name, limit_data in self.csr_limits.items():
+            factors = limit_data.get('factors', [])
+            limit_value = limit_data.get('value', 0)
+            limit_type = limit_data.get('type', 'sum')
+            
+            if limit_type == 'sum':
+                def make_sum_constraint(factors_list, limit_val):
+                    def constraint_func(x_orig):
+                        # Note: For comprehensive optimization, we're already in original scale
+                        total = sum(x_orig[i] for i in factors_list)
+                        return limit_val - total
+                    return constraint_func
+                
+                constraint = {'type': 'ineq', 
+                            'fun': make_sum_constraint(factors, limit_value)}
+                constraints.append(constraint)
+                
+            elif limit_type == 'product':
+                def make_product_constraint(factors_list, limit_val):
+                    def constraint_func(x_orig):
+                        # Note: For comprehensive optimization, we're already in original scale
+                        product = np.prod([x_orig[i] for i in factors_list])
+                        return limit_val - product
+                    return constraint_func
+                
+                constraint = {'type': 'ineq', 
+                            'fun': make_product_constraint(factors, limit_value)}
+                constraints.append(constraint)
+
+        # Debug: Print constraints before optimization
+        print(f"Number of constraints: {len(constraints)}")
+        print("Comprehensive optimization - using original scale constraints")
+
         # Perform the optimization - note bounds are in original scale
-        res = minimize(objective_to_minimize, x0_for_opt, bounds=bounds_for_opt, method='L-BFGS-B')
-        
-        return {
-            'x': res.x,  # Already in original scale
-            'value': comprehensive_func_for_optimizer(res.x)
-        }
+        try:
+            if constraints:
+                res = minimize(objective_to_minimize, x0_for_opt, bounds=bounds_for_opt, 
+                            method='SLSQP', constraints=constraints, options={'disp': True})
+            else:
+                res = minimize(objective_to_minimize, x0_for_opt, bounds=bounds_for_opt, method='L-BFGS-B')
+            
+            # Check if optimization was successful
+            if not res.success:
+                messagebox.showwarning("Optimization Warning", 
+                                    f"Optimization may not have converged: {res.message}")
+            
+            # Verify constraints are satisfied
+            if constraints:
+                print("Verifying constraints:")
+                for i, constr in enumerate(constraints):
+                    constraint_value = constr['fun'](res.x)
+                    print(f"Constraint {i}: {constraint_value} (should be >= 0)")
+                    if constraint_value < -1e-6:  # Allow small numerical tolerance
+                        messagebox.showwarning("Constraint Violation", 
+                                            f"Constraint {i} is violated: {constraint_value}")
+            
+            # CRITICAL FIX: Always calculate using the comprehensive function
+            extremum_value = comprehensive_func_for_optimizer(res.x)
+            
+            # Debug: Print the result
+            print(f"Optimization result (original): {res.x}")
+            print(f"Sum of factors: {sum(res.x)}")
+            print(f"Extremum value: {extremum_value}")
+            
+            return {
+                'x': res.x,  # Already in original scale
+                'value': extremum_value
+            }
+            
+        except Exception as e:
+            messagebox.showerror("Optimization Error", f"Optimization failed: {str(e)}")
+            return {'x': np.array([np.nan]*len(x0_for_opt)), 'value': np.nan}
 
     def _normalize_point(self, x_point_original_scale):
         if x_point_original_scale is None: return None

@@ -151,14 +151,13 @@ class CSRApp:
                                         state="readonly", font=self.entry_font)
         self.weight_combo.pack(fill='x', padx=5, pady=(2,10))
         self.weight_combo.current(0)
-
-        ttk.Label(left_frame, text="Normalization Standard:").pack(anchor='w', padx=5)
-        self.norm_select = ttk.Combobox(left_frame, values=["[-1, 1]", "[0, 1]"], state="readonly", font=self.entry_font)
+        
+        ttk.Label(left_frame, text="Normalization:").pack(anchor='w', padx=5)
+        self.norm_select = ttk.Combobox(left_frame, values=["[-1, 1]", "[0, 1]", "No normalization"], state="readonly", font=self.entry_font)
         self.norm_select.pack(fill='x', padx=5, pady=(2,10))
         self.norm_select.current(1)  # Default to [0, 1]
-
-        reg_frame = ttk.LabelFrame(left_frame, text="Regularization Parameter", padding=(10,5,10,10))
-        reg_frame.pack(fill='x', pady=10, padx=5)
+        
+        
         
         # === Active Factors Selection ===
         active_factors_frame = ttk.LabelFrame(left_frame, text="Active Factors in Optimization", padding=(10,5,10,10))
@@ -176,17 +175,6 @@ class CSRApp:
 
         ttk.Label(active_factors_frame, text="(Set to limit active factors during extremum search)").grid(row=1, column=0, columnspan=2, sticky='w', pady=(2,0))
 
-        # Create the label first
-        self.alpha_value_label = ttk.Label(reg_frame, text="1.00", width=7, anchor='e')
-        self.alpha_value_label.grid(row=0, column=2, sticky='e', padx=(5,0), pady=3)
-
-        # Then create the slider that references it
-        self.alpha_slider = ttk.Scale(reg_frame, from_=-4, to=0, orient=tk.HORIZONTAL, command=self.update_alpha_value)
-        self.alpha_slider.set(0)
-        self.alpha_slider.grid(row=0, column=1, sticky='ew', padx=(10,0), pady=3)
-
-        ttk.Label(reg_frame, text="Alpha (penalty):").grid(row=0, column=0, sticky='w', pady=3)
-        reg_frame.columnconfigure(1, weight=1)
 
         # === CSR Factor Limits Section ===
         csr_limits_frame = ttk.LabelFrame(left_frame, text="CSR Factor Limits", padding=(10,5,10,10))
@@ -215,7 +203,7 @@ class CSRApp:
         ttk.Button(left_frame, text="Run Fitting Process", command=self.run_fitting).pack(pady=15, padx=5, fill='x', ipady=5)
 
         # Function Definition Frame
-        function_def_frame = ttk.LabelFrame(left_frame, text="CSR Function", padding=(10, 5, 10, 10))
+        function_def_frame = ttk.LabelFrame(left_frame, text="CSR Equation", padding=(10, 5, 10, 10))
         function_def_frame.pack(fill='x', pady=(0, 5), padx=5, expand=True)
 
         eqn_text_frame = ttk.Frame(function_def_frame, style="App.TFrame")
@@ -770,22 +758,6 @@ class CSRApp:
         except ValueError:
             pass
 
-    def update_alpha_value(self, value):
-        """Update the alpha value label when the slider is moved"""
-        try:
-            alpha = 10 ** float(value)
-            if alpha < 0.01:
-                # Use scientific notation for small values
-                alpha_str = "{:.2e}".format(alpha)
-                # Format to remove leading zero in exponent (e.g., 1.00e-02 → 1.00e-2)
-                alpha_str = alpha_str.replace("e-0", "e-").replace("e+0", "e+")
-            else:
-                # Regular decimal format for larger values
-                alpha_str = f"{alpha:.2f}"
-            self.alpha_value_label.config(text=alpha_str)
-        except ValueError:
-            self.alpha_value_label.config(text="1.00")
-
     def run_fitting(self):
         try:
             self.clear_state()
@@ -879,6 +851,10 @@ class CSRApp:
                 range_val = self.norm_x_max - self.norm_x_min
                 range_val[range_val == 0] = 1
                 X_fit = (X_fit - self.norm_x_min) / range_val
+            else:  # "No normalization"
+                self.norm_x_min = None
+                self.norm_x_max = None
+                # Keep X_fit as is (original scale)
 
             self.X = X_fit
 
@@ -887,7 +863,7 @@ class CSRApp:
                 messagebox.showerror("Error", "Design matrix has no terms.")
                 return
 
-            alpha_val = 10 ** float(self.alpha_slider.get())
+            alpha_val = 1e-5
 
             model = Ridge(alpha=alpha_val, max_iter=None, tol=1e-4, fit_intercept=False, random_state=42)
             model.fit(X_design, self.y)
@@ -903,6 +879,7 @@ class CSRApp:
             self.df['residual'] = 0.0  # Initialize/reset residual column
             self.df.loc[working_df.index, 'residual'] = residuals  # Only update residuals for the rows we used
             train_r2 = model.score(X_design, self.y)
+            train_rmse = np.sqrt(np.mean((self.y - self.y_pred) ** 2))
 
             # SET UP OPTIMIZATION PARAMETERS FIRST
             if norm_type == "[-1, 1]":
@@ -911,7 +888,7 @@ class CSRApp:
             elif norm_type == "[0, 1]":
                 bounds_opt = [(0, 1)] * n_factors
                 x0_opt = np.full(n_factors, 0.5)
-            else:
+            else:  # "No normalization"
                 bounds_opt = [(self.X_original_scale[:,i].min(), self.X_original_scale[:,i].max()) for i in range(n_factors)]
                 x0_opt = np.mean(self.X_original_scale, axis=0)
 
@@ -937,26 +914,35 @@ class CSRApp:
             if hasattr(self, 'individual_results_frame'):
                 for widget in self.individual_results_frame.winfo_children():
                     widget.destroy()
-            
+                        
             # Clear R² frame for single optimization
             if hasattr(self, 'r2_frame'):
                 for widget in self.r2_frame.winfo_children():
                     widget.destroy()
                 
-                # Create a simple frame for R² display
-                r2_frame = ttk.Frame(self.r2_frame)
-                r2_frame.pack(fill='x', pady=(0,5))
+                # Create a frame for R² and MSE display
+                metrics_frame = ttk.Frame(self.r2_frame)
+                metrics_frame.pack(fill='x', pady=(0,5))
                 
-                ttk.Label(r2_frame, text="R²:", font=self.label_font).grid(row=0, column=0, sticky='w')
-                
-                r2_text = tk.Text(r2_frame, height=1, width=15, wrap=tk.NONE, state='disabled',
+                # R² display
+                ttk.Label(metrics_frame, text="R²:", font=self.label_font).grid(row=0, column=0, sticky='w')
+                r2_text = tk.Text(metrics_frame, height=1, width=15, wrap=tk.NONE, state='disabled',
                                 font=self.text_widget_font, relief=tk.SOLID, borderwidth=1, padx=5)
-                r2_text.grid(row=0, column=1, padx=(5,0), sticky='w')
+                r2_text.grid(row=0, column=1, padx=(5,15), sticky='w')
                 r2_text.config(state='normal')
                 r2_text.insert(tk.END, f"{train_r2:.4f}")
                 r2_text.config(state='disabled')
                 
-                # Add interpretation
+                # MSE display
+                ttk.Label(metrics_frame, text="RMSE:", font=self.label_font).grid(row=0, column=2, sticky='w', padx=(10,0))
+                mse_text = tk.Text(metrics_frame, height=1, width=15, wrap=tk.NONE, state='disabled',
+                                font=self.text_widget_font, relief=tk.SOLID, borderwidth=1, padx=5)
+                mse_text.grid(row=0, column=3, padx=(5,0), sticky='w')
+                mse_text.config(state='normal')
+                mse_text.insert(tk.END, f"{train_rmse:.4f}")
+                mse_text.config(state='disabled')
+                
+                # Add interpretation for R²
                 interpretation = ""
                 if train_r2 >= 0.9:
                     interpretation = "Excellent fit"
@@ -967,9 +953,9 @@ class CSRApp:
                 else:
                     interpretation = "Poor fit"
                 
-                interp_text = tk.Text(r2_frame, height=1, width=20, wrap=tk.NONE, state='disabled',
+                interp_text = tk.Text(metrics_frame, height=1, width=20, wrap=tk.NONE, state='disabled',
                                     font=self.text_widget_font, relief=tk.SOLID, borderwidth=1, padx=5)
-                interp_text.grid(row=0, column=2, padx=(5,0), sticky='w')
+                interp_text.grid(row=0, column=4, padx=(15,0), sticky='w')
                 interp_text.config(state='normal')
                 interp_text.insert(tk.END, interpretation)
                 interp_text.config(state='disabled')
@@ -1013,7 +999,7 @@ class CSRApp:
                 # Fit CSR for this result
                 X_fit = temp_df[[f for f in temp_df.columns if f.startswith('factor')]].values
                 y_fit = temp_df['result'].values
-                
+                        
                 # Normalize if selected
                 norm_type = self.norm_select.get()
                 x_min = X_fit.min(axis=0)
@@ -1034,7 +1020,7 @@ class CSRApp:
                 X_design = self.create_design_matrix(X_fit, bits_array)
                 
                 # Fit model
-                alpha_val = 10 ** float(self.alpha_slider.get())
+                alpha_val = 1e-5
                 model = Ridge(alpha=alpha_val, fit_intercept=False)
                 model.fit(X_design, y_fit)
                 
@@ -1070,7 +1056,7 @@ class CSRApp:
                         x_norm = 2 * (x - func_data['x_min']) / (func_data['x_max'] - func_data['x_min']) - 1
                     elif func_data['norm_type'] == "[0, 1]":
                         x_norm = (x - func_data['x_min']) / (func_data['x_max'] - func_data['x_min'])
-                    else:
+                    else:  # "No normalization"
                         x_norm = x
                         
                     design_row = self.create_design_matrix(x_norm.reshape(1, -1), func_data['bits_array'])
@@ -1352,20 +1338,32 @@ class CSRApp:
             for result_col, func_data in self.result_functions.items():
                 display_name = self.col_name_mapping.get(result_col, result_col)
                 r2 = func_data['model'].score(func_data['X_design'], func_data['y'])
+                rmse = func_data['rmse']  # Get the stored MSE
                 
                 r2_frame = ttk.Frame(self.r2_frame)
                 r2_frame.grid(row=r2_row_num, column=0, sticky='ew', pady=(0,5))
                 
                 ttk.Label(r2_frame, text=f"{display_name}:", font=self.label_font).grid(row=0, column=0, sticky='w')
                 
-                r2_text = tk.Text(r2_frame, height=1, width=15, wrap=tk.NONE, state='disabled',
+                # R² display
+                ttk.Label(r2_frame, text="R²:", font=self.label_font).grid(row=0, column=1, sticky='w', padx=(5,0))
+                r2_text = tk.Text(r2_frame, height=1, width=12, wrap=tk.NONE, state='disabled',
                                 font=self.text_widget_font, relief=tk.SOLID, borderwidth=1, padx=5)
-                r2_text.grid(row=0, column=1, padx=(5,0), sticky='w')
+                r2_text.grid(row=0, column=2, padx=(2,10), sticky='w')
                 r2_text.config(state='normal')
                 r2_text.insert(tk.END, f"{r2:.4f}")
                 r2_text.config(state='disabled')
                 
-                # Add interpretation
+                # MSE display
+                ttk.Label(r2_frame, text="MSE:", font=self.label_font).grid(row=0, column=3, sticky='w')
+                mse_text = tk.Text(r2_frame, height=1, width=12, wrap=tk.NONE, state='disabled',
+                                font=self.text_widget_font, relief=tk.SOLID, borderwidth=1, padx=5)
+                mse_text.grid(row=0, column=4, padx=(2,10), sticky='w')
+                mse_text.config(state='normal')
+                mse_text.insert(tk.END, f"{rmse:.4f}")
+                mse_text.config(state='disabled')
+                
+                # Add interpretation for R²
                 interpretation = ""
                 if r2 >= 0.9:
                     interpretation = "Excellent fit"
@@ -1376,30 +1374,42 @@ class CSRApp:
                 else:
                     interpretation = "Poor fit"
                 
-                interp_text = tk.Text(r2_frame, height=1, width=20, wrap=tk.NONE, state='disabled',
+                interp_text = tk.Text(r2_frame, height=1, width=15, wrap=tk.NONE, state='disabled',
                                     font=self.text_widget_font, relief=tk.SOLID, borderwidth=1, padx=5)
-                interp_text.grid(row=0, column=2, padx=(5,0), sticky='w')
+                interp_text.grid(row=0, column=5, padx=(5,0), sticky='w')
                 interp_text.config(state='normal')
                 interp_text.insert(tk.END, interpretation)
                 interp_text.config(state='disabled')
                 
                 r2_row_num += 1
-            
-            # Calculate and display average R²
+
+            # Calculate and display average R² and MSE
             avg_r2 = np.mean([func['model'].score(func['X_design'], func['y']) for func in self.result_functions.values()])
-            
+            avg_mse = np.mean([func['mse'] for func in self.result_functions.values()])  # ADD THIS LINE
+
             avg_frame = ttk.Frame(self.r2_frame)
             avg_frame.grid(row=r2_row_num, column=0, sticky='ew', pady=(10,0))
-            
+
             ttk.Label(avg_frame, text="Average R²:", font=(self.label_font.cget("family"), 
-                     self.label_font.cget("size"), "bold")).grid(row=0, column=0, sticky='w')
-            
-            avg_text = tk.Text(avg_frame, height=1, width=15, wrap=tk.NONE, state='disabled',
-                             font=self.text_widget_font, relief=tk.SOLID, borderwidth=1, padx=5)
-            avg_text.grid(row=0, column=1, padx=(5,0), sticky='w')
-            avg_text.config(state='normal')
-            avg_text.insert(tk.END, f"{avg_r2:.4f}")
-            avg_text.config(state='disabled')
+                    self.label_font.cget("size"), "bold")).grid(row=0, column=0, sticky='w')
+
+            avg_r2_text = tk.Text(avg_frame, height=1, width=12, wrap=tk.NONE, state='disabled',
+                                font=self.text_widget_font, relief=tk.SOLID, borderwidth=1, padx=5)
+            avg_r2_text.grid(row=0, column=1, padx=(5,15), sticky='w')
+            avg_r2_text.config(state='normal')
+            avg_r2_text.insert(tk.END, f"{avg_r2:.4f}")
+            avg_r2_text.config(state='disabled')
+
+            # ADD Average MSE display
+            ttk.Label(avg_frame, text="Average MSE:", font=(self.label_font.cget("family"), 
+                    self.label_font.cget("size"), "bold")).grid(row=0, column=2, sticky='w', padx=(10,0))
+
+            avg_mse_text = tk.Text(avg_frame, height=1, width=12, wrap=tk.NONE, state='disabled',
+                                font=self.text_widget_font, relief=tk.SOLID, borderwidth=1, padx=5)
+            avg_mse_text.grid(row=0, column=3, padx=(5,0), sticky='w')
+            avg_mse_text.config(state='normal')
+            avg_mse_text.insert(tk.END, f"{avg_mse:.4f}")
+            avg_mse_text.config(state='disabled')
 
     def _generate_single_result_equation(self, beta, bits_array, n_factors):
         """Helper method to generate equation string for a single result (same as single optimization)"""
@@ -1700,7 +1710,8 @@ class CSRApp:
                             x_orig = x_norm
                         
                         total = sum(x_orig[i] for i in factors_list)
-                        return limit_val - total
+                        # Add small relaxation to avoid numerical issues
+                        return limit_val - total + 1e-4  # Added +1e-4 relaxation
                     return constraint_func
                 
                 constraint = {'type': 'ineq', 
@@ -1987,7 +1998,7 @@ class CSRApp:
                 for i, constr in enumerate(constraints):
                     constraint_value = constr['fun'](res.x)  # This now uses original scale conversion
                     print(f"Constraint {i}: {constraint_value} (should be >= 0)")
-                    if constraint_value < -1e-6:  # Allow small numerical tolerance
+                    if constraint_value < -1e-3:  # Allow small numerical tolerance
                         messagebox.showwarning("Constraint Violation", 
                                             f"Constraint {i} is violated: {constraint_value}")
             
@@ -2091,7 +2102,7 @@ class CSRApp:
                 for i, constr in enumerate(constraints):
                     constraint_value = constr['fun'](res.x)
                     print(f"Constraint {i}: {constraint_value} (should be >= 0)")
-                    if constraint_value < -1e-6:  # Allow small numerical tolerance
+                    if constraint_value < -1e-3:  # Allow small numerical tolerance
                         messagebox.showwarning("Constraint Violation", 
                                             f"Constraint {i} is violated: {constraint_value}")
             
@@ -2145,16 +2156,31 @@ class CSRApp:
     def _normalize_point(self, x_point_original_scale):
         if x_point_original_scale is None: return None
         x_original_np = np.array(x_point_original_scale, dtype=float)
-        if self.norm_select.get() == "None" or self.norm_x_min is None or self.norm_x_max is None:
+        norm_type = self.norm_select.get()
+        if norm_type == "No normalization" or self.norm_x_min is None or self.norm_x_max is None:
             return x_original_np
         if len(x_original_np) != len(self.norm_x_min): return None
         range_val = self.norm_x_max - self.norm_x_min
         range_val[range_val == 0] = 1
-        if self.norm_select.get() == "[-1, 1]":
+        if norm_type == "[-1, 1]":
             return 2 * (x_original_np - self.norm_x_min) / range_val - 1
-        elif self.norm_select.get() == "[0, 1]":
+        elif norm_type == "[0, 1]":
             return (x_original_np - self.norm_x_min) / range_val
         return x_original_np
+
+    def _unnormalize_point(self, x_point_fitting_scale):
+        if x_point_fitting_scale is None: return None
+        x_fitting_np = np.array(x_point_fitting_scale, dtype=float)
+        norm_type = self.norm_select.get()
+        if norm_type == "No normalization" or self.norm_x_min is None or self.norm_x_max is None:
+            return x_fitting_np
+        if len(x_fitting_np) != len(self.norm_x_min): return None
+        range_val = self.norm_x_max - self.norm_x_min
+        if norm_type == "[-1, 1]":
+            return (x_fitting_np + 1) / 2 * range_val + self.norm_x_min
+        elif norm_type == "[0, 1]":
+            return x_fitting_np * range_val + self.norm_x_min
+        return x_fitting_np
 
     def _unnormalize_point(self, x_point_fitting_scale):
         if x_point_fitting_scale is None: return None

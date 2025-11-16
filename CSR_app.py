@@ -124,19 +124,70 @@ class CSRApp:
         self.main_paned = tk.PanedWindow(self.tab1, orient=tk.HORIZONTAL, sashrelief=tk.GROOVE, sashwidth=8, background="#D0D0D0", bd=0)
         self.main_paned.pack(fill=tk.BOTH, expand=True)
 
-        left_frame = ttk.Frame(self.main_paned, padding=15, style="App.TFrame")
-        self.main_paned.add(left_frame, width=430, minsize=400, sticky="nsew")
+        # === Left Column with Scrollbar ===
+        left_container = ttk.Frame(self.main_paned, style="App.TFrame")
+        self.main_paned.add(left_container, width=430, minsize=400, sticky="nsew")
+        
+        # Left scrollbar setup
+        left_canvas = tk.Canvas(left_container, highlightthickness=0)
+        left_scrollbar = ttk.Scrollbar(left_container, orient="vertical", command=left_canvas.yview)
+        left_scrollable_frame = ttk.Frame(left_canvas, style="App.TFrame")
+        
+        left_scrollable_frame.bind(
+            "<Configure>",
+            lambda e: left_canvas.configure(scrollregion=left_canvas.bbox("all"))
+        )
+        
+        left_canvas.create_window((0, 0), window=left_scrollable_frame, anchor="nw")
+        left_canvas.configure(yscrollcommand=left_scrollbar.set)
+        
+        left_canvas.pack(side="left", fill="both", expand=True)
+        left_scrollbar.pack(side="right", fill="y")
 
-        center_frame = ttk.Frame(self.main_paned, padding=(5,15,15,15), style="App.TFrame")
-        self.main_paned.add(center_frame, width=650, minsize=500, sticky="nsew")
+        # === Center Column with Scrollbar ===
+        center_container = ttk.Frame(self.main_paned, style="App.TFrame")
+        self.main_paned.add(center_container, width=650, minsize=500, sticky="nsew")
+        
+        # Center scrollbar setup
+        center_canvas = tk.Canvas(center_container, highlightthickness=0)
+        center_scrollbar = ttk.Scrollbar(center_container, orient="vertical", command=center_canvas.yview)
+        center_scrollable_frame = ttk.Frame(center_canvas, style="App.TFrame")
+        
+        center_scrollable_frame.bind(
+            "<Configure>",
+            lambda e: center_canvas.configure(scrollregion=center_canvas.bbox("all"))
+        )
+        
+        center_canvas.create_window((0, 0), window=center_scrollable_frame, anchor="nw")
+        center_canvas.configure(yscrollcommand=center_scrollbar.set)
+        
+        center_canvas.pack(side="left", fill="both", expand=True)
+        center_scrollbar.pack(side="right", fill="y")
 
-        right_paned_container = ttk.Frame(self.main_paned, style="App.TFrame", padding=0)
-        self.main_paned.add(right_paned_container, width=450, minsize=420, sticky="nsew")
-
-        right_paned = tk.PanedWindow(right_paned_container, orient=tk.VERTICAL, sashrelief=tk.GROOVE, sashwidth=8, background="#D0D0D0", bd=0)
-        right_paned.pack(fill=tk.BOTH, expand=True, padx=5, pady=0)
+        # === Right Column with Scrollbar ===
+        right_container = ttk.Frame(self.main_paned, style="App.TFrame")
+        self.main_paned.add(right_container, width=450, minsize=420, sticky="nsew")
+        
+        # Right scrollbar setup
+        right_canvas = tk.Canvas(right_container, highlightthickness=0)
+        right_scrollbar = ttk.Scrollbar(right_container, orient="vertical", command=right_canvas.yview)
+        right_scrollable_frame = ttk.Frame(right_canvas, style="App.TFrame")
+        
+        right_scrollable_frame.bind(
+            "<Configure>",
+            lambda e: right_canvas.configure(scrollregion=right_canvas.bbox("all"))
+        )
+        
+        right_canvas.create_window((0, 0), window=right_scrollable_frame, anchor="nw")
+        right_canvas.configure(yscrollcommand=right_scrollbar.set)
+        
+        right_canvas.pack(side="left", fill="both", expand=True)
+        right_scrollbar.pack(side="right", fill="y")
 
         # === Left Panel Contents ===
+        left_frame = ttk.Frame(left_scrollable_frame, padding=15, style="App.TFrame")
+        left_frame.pack(fill='both', expand=True)
+        
         self.style.configure("Accent.TButton", font=self.button_font, foreground="white", background="#0078D7")
         self.style.map("Accent.TButton", background=[('active', '#005A9E'), ('pressed', '!disabled', '#004C8A')])
         ttk.Button(left_frame, text="Select Data File", command=self.select_file, style="Accent.TButton").pack(pady=(0,15), padx=5, fill='x')
@@ -158,6 +209,14 @@ class CSRApp:
         self.norm_select = ttk.Combobox(left_frame, values=["[-1, 1]", "[0, 1]", "No normalization"], state="readonly", font=self.entry_font)
         self.norm_select.pack(fill='x', padx=5, pady=(2,10))
         self.norm_select.current(1)  # Default to [0, 1]
+
+        # === Show All Factor Combinations Option ===
+        self.show_all_combinations_var = tk.BooleanVar(value=False)  # Default to showing all
+        show_all_frame = ttk.Frame(left_frame, style="App.TFrame")
+        show_all_frame.pack(fill='x', pady=(0,10), padx=5)
+        ttk.Checkbutton(show_all_frame, text="Show results for all parameter combinations (N down to 1)", 
+                        variable=self.show_all_combinations_var, 
+                        command=self._update_show_all_combinations).pack(anchor='w')
         
         # === CSR Factor Limits Section ===
         csr_limits_frame = ttk.LabelFrame(left_frame, text="CSR Parameter Limits", padding=(10,5,10,10))
@@ -183,65 +242,28 @@ class CSRApp:
         ttk.Button(limits_button_frame, text="Remove Selected", command=self._csr_remove_limit, width=12).pack(side='left')
         ttk.Button(limits_button_frame, text="Clear All", command=self._csr_clear_limits, width=8).pack(side='left', padx=(5,0))
 
+        # === Parameter Limits Selection ===
+        factor_limits_frame = ttk.LabelFrame(left_frame, text="Parameter Limits Selection", padding=(10,5,10,10))
+        factor_limits_frame.pack(fill='x', pady=10, padx=5)
+        
+        self.factor_limits_frame = ttk.Frame(factor_limits_frame, style="App.TFrame")
+        self.factor_limits_frame.pack(fill='both', expand=True)
+        
+        ttk.Label(self.factor_limits_frame, text="Select parameters for limits (will be applied during optimization):", 
+                font=self.label_font).pack(anchor='w', pady=(0,5))
+        
+        # Container for factor limit checkboxes
+        self.factor_limits_container = ttk.Frame(self.factor_limits_frame, style="App.TFrame")
+        self.factor_limits_container.pack(fill='x', pady=5)
+
         ttk.Button(left_frame, text="Run Fitting Process", command=self.run_fitting).pack(pady=15, padx=5, fill='x', ipady=5)
 
-        # Function Definition Frame
-        function_def_frame = ttk.LabelFrame(left_frame, text="CSR Equation", padding=(10, 5, 10, 10))
-        function_def_frame.pack(fill='x', pady=(0, 5), padx=5, expand=True)
-
-        eqn_text_frame = ttk.Frame(function_def_frame, style="App.TFrame")
-        eqn_text_frame.pack(fill='both', expand=True, padx=0, pady=(0, 5))
-
-        self.equation_text = tk.Text(eqn_text_frame, height=4, wrap=tk.WORD, state='disabled',
-                                    font=self.text_widget_font, relief=tk.SOLID, borderwidth=1, padx=8, pady=5,spacing1=2, spacing2=2, spacing3=2)
-        scrollbar_eqn = ttk.Scrollbar(eqn_text_frame, command=self.equation_text.yview, orient=tk.VERTICAL)
-        self.equation_text['yscrollcommand'] = scrollbar_eqn.set
-        scrollbar_eqn.pack(side=tk.RIGHT, fill=tk.Y)
-        self.equation_text.pack(side=tk.LEFT, fill='both', expand=True)
-
-        # Factor Definition Frame
-        factor_def_frame = ttk.LabelFrame(left_frame, text="Parameter Definitions", padding=(10, 5, 10, 10))
-        factor_def_frame.pack(fill='x', pady=(0, 5), padx=5, expand=True)
-
-        factor_def_text_frame = ttk.Frame(factor_def_frame, style="App.TFrame")
-        factor_def_text_frame.pack(fill='both', expand=True, padx=0, pady=(0, 5))
-
-        self.factor_definitions_text = tk.Text(factor_def_text_frame, height=3, wrap=tk.WORD, state='disabled',
-                                            font=self.text_widget_font, relief=tk.SOLID, borderwidth=1, padx=8, pady=5,spacing1=2, spacing2=2, spacing3=2)
-        scrollbar_factor_def = ttk.Scrollbar(factor_def_text_frame, command=self.factor_definitions_text.yview, orient=tk.VERTICAL)
-        self.factor_definitions_text['yscrollcommand'] = scrollbar_factor_def.set
-        scrollbar_factor_def.pack(side=tk.RIGHT, fill=tk.Y)
-        self.factor_definitions_text.pack(side=tk.LEFT, fill='both', expand=True)
-
         # === Center Panel Contents ===
-        center_container = ttk.Frame(center_frame, style="App.TFrame")
-        center_container.pack(fill='both', expand=True, pady=(0,5))
-        
-        # Create a scrollable frame for the factor selection
-        scroll_frame = ttk.Frame(center_container, style="App.TFrame")
-        scroll_frame.pack(fill='both', expand=True)
-        
-        # Create a canvas and scrollbar
-        canvas = tk.Canvas(scroll_frame, highlightthickness=0)
-        scrollbar = ttk.Scrollbar(scroll_frame, orient="vertical", command=canvas.yview)
-        scrollable_frame = ttk.Frame(canvas)
-        
-        scrollable_frame.bind(
-            "<Configure>",
-            lambda e: canvas.configure(
-                scrollregion=canvas.bbox("all")
-            )
-        )
-        
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
-        
-        # Pack the canvas and scrollbar
-        canvas.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
-        
-        # Factor selection frame
-        factor_frame = ttk.LabelFrame(scrollable_frame, text="Parameter or Outcome?", padding=10)
+        center_frame = ttk.Frame(center_scrollable_frame, padding=(5,15,15,15), style="App.TFrame")
+        center_frame.pack(fill='both', expand=True)
+
+        # Factor selection frame (moved to top of center column)
+        factor_frame = ttk.LabelFrame(center_frame, text="Parameter or Outcome?", padding=10)
         factor_frame.pack(fill='x', pady=(0,10))
         
         self.factor_selection_frame = ttk.Frame(factor_frame, style="App.TFrame")
@@ -255,64 +277,80 @@ class CSRApp:
         ttk.Label(self.factor_selection_frame, text="Select parameters and outcomes to include in analysis:", 
                 font=self.label_font).pack(anchor='w', pady=(0,10))
         
-        # Factor Limits Selection Frame - FIXED: Use pack instead of grid
-        factor_limits_frame = ttk.LabelFrame(scrollable_frame, text="Paramater Limits Selection", padding=10)
-        factor_limits_frame.pack(fill='x', pady=(10,10))
-        
-        self.factor_limits_frame = ttk.Frame(factor_limits_frame, style="App.TFrame")
-        self.factor_limits_frame.pack(fill='both', expand=True)
-        
-        ttk.Label(self.factor_limits_frame, text="Select parameters for limits (will be applied during optimization):", 
-                font=self.label_font).pack(anchor='w', pady=(0,5))
-        
-        # This will be populated when factors are loaded
-        self.csr_factor_combos = []
-        
-        # Container for factor limit checkboxes
-        self.factor_limits_container = ttk.Frame(self.factor_limits_frame, style="App.TFrame")
-        self.factor_limits_container.pack(fill='x', pady=5)
-        
-        # Key Results Frame
-        results_frame = ttk.LabelFrame(scrollable_frame, text="Key Results", padding=(10,5,10,10))
+        # Key Results Frame (now contains CSR Equation and Parameter Definitions)
+        results_frame = ttk.LabelFrame(center_frame, text="Key Results", padding=(10,5,10,10))
         results_frame.pack(fill='x', pady=(10,0), expand=True)
         
-        # Create a canvas and scrollbar for the results frame
-        results_canvas = tk.Canvas(results_frame, highlightthickness=0)
-        scrollbar_results = ttk.Scrollbar(results_frame, orient="vertical", command=results_canvas.yview)
-        scrollable_results_frame = ttk.Frame(results_canvas)
-        
-        scrollable_results_frame.bind(
-            "<Configure>",
-            lambda e: results_canvas.configure(
-                scrollregion=results_canvas.bbox("all")
-            )
-        )
-        
-        results_canvas.create_window((0, 0), window=scrollable_results_frame, anchor="nw")
-        results_canvas.configure(yscrollcommand=scrollbar_results.set)
-        
-        # Pack the canvas and scrollbar
-        results_canvas.pack(side="left", fill="both", expand=True)
-        scrollbar_results.pack(side="right", fill="y")
-        
-        # Extremum section - FIXED: Use pack instead of grid
-        extremum_frame = ttk.LabelFrame(scrollable_results_frame, text="Extremum (Original Scale)", padding=(10,5,10,10))
+        # Function Definition Frame (MOVED inside Key Results)
+        function_def_frame = ttk.LabelFrame(results_frame, text="CSR Equation", padding=(10, 5, 10, 10))
+        function_def_frame.pack(fill='x', pady=(0, 10), padx=5)
+
+        eqn_text_frame = ttk.Frame(function_def_frame, style="App.TFrame")
+        eqn_text_frame.pack(fill='both', expand=True, padx=0, pady=(0, 5))
+
+        # Create frame for text widget and scrollbars
+        eqn_container = ttk.Frame(eqn_text_frame, style="App.TFrame")
+        eqn_container.pack(fill='both', expand=True)
+
+        self.equation_text = tk.Text(eqn_container, height=6, wrap=tk.WORD, state='disabled',  # ← CHANGED: wrap=tk.WORD and increased height
+                                    font=self.text_widget_font, relief=tk.SOLID, borderwidth=1, padx=8, pady=5, spacing1=2, spacing2=2, spacing3=2)
+
+        # Vertical scrollbar only (remove horizontal scrollbar for equation)
+        v_scrollbar_eqn = ttk.Scrollbar(eqn_container, command=self.equation_text.yview, orient=tk.VERTICAL)
+        self.equation_text['yscrollcommand'] = v_scrollbar_eqn.set
+
+        # Simple layout - no horizontal scrollbar needed for word-wrapped text
+        self.equation_text.pack(side=tk.LEFT, fill='both', expand=True)
+        v_scrollbar_eqn.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Factor Definition Frame (MOVED inside Key Results)
+        factor_def_frame = ttk.LabelFrame(results_frame, text="Parameter Definitions", padding=(10, 5, 10, 10))
+        factor_def_frame.pack(fill='x', pady=(0, 10), padx=5)
+
+        factor_def_text_frame = ttk.Frame(factor_def_frame, style="App.TFrame")
+        factor_def_text_frame.pack(fill='both', expand=True, padx=0, pady=(0, 5))
+
+        self.factor_definitions_text = tk.Text(factor_def_text_frame, height=3, wrap=tk.WORD, state='disabled',
+                                            font=self.text_widget_font, relief=tk.SOLID, borderwidth=1, padx=8, pady=5,spacing1=2, spacing2=2, spacing3=2)
+        scrollbar_factor_def = ttk.Scrollbar(factor_def_text_frame, command=self.factor_definitions_text.yview, orient=tk.VERTICAL)
+        self.factor_definitions_text['yscrollcommand'] = scrollbar_factor_def.set
+        scrollbar_factor_def.pack(side=tk.RIGHT, fill=tk.Y)
+        self.factor_definitions_text.pack(side=tk.LEFT, fill='both', expand=True)
+
+        # Extremum section (now below CSR Equation and Parameter Definitions)
+        extremum_frame = ttk.LabelFrame(results_frame, text="Extremum (Original Scale)", padding=(10,5,10,10))
         extremum_frame.pack(fill='x', pady=(0,10))
-        
+
         # Factors display
         factors_display_frame = ttk.Frame(extremum_frame, style="App.TFrame")
         factors_display_frame.pack(fill='x', pady=5)
-        ttk.Label(factors_display_frame, text="Results:").pack(side='left')  # Changed label from "Factors" to "Results"
-        self.factors_text = tk.Text(factors_display_frame, height=8, wrap=tk.WORD, state='disabled',  # Increased height from 1 to 8
+        ttk.Label(factors_display_frame, text="Results:").pack(anchor='w', pady=(0,5))  # ← Moved to top
+
+        # Create container for text widget and scrollbars
+        factors_container = ttk.Frame(factors_display_frame, style="App.TFrame")
+        factors_container.pack(fill='both', expand=True)
+
+        self.factors_text = tk.Text(factors_container, height=8, wrap=tk.NONE, state='disabled',  # ← Changed to NONE for horizontal scrolling
                                 font=self.text_widget_font, relief=tk.SOLID, borderwidth=1, padx=5)
-        self.factors_text.pack(side='left', fill='x', expand=True, padx=(5,0))
-        
-        # Individual results frame for comprehensive optimization
-        self.individual_results_frame = ttk.LabelFrame(scrollable_results_frame, text="Individual Results at Extremum", padding=(10,5,10,10))
-        self.individual_results_frame.pack(fill='x', pady=(0,10))
+
+        # Vertical scrollbar
+        v_scrollbar_factors = ttk.Scrollbar(factors_container, command=self.factors_text.yview, orient=tk.VERTICAL)
+        self.factors_text['yscrollcommand'] = v_scrollbar_factors.set
+
+        # Horizontal scrollbar  
+        h_scrollbar_factors = ttk.Scrollbar(factors_container, command=self.factors_text.xview, orient=tk.HORIZONTAL)
+        self.factors_text['xscrollcommand'] = h_scrollbar_factors.set
+
+        # Grid layout for text and scrollbars
+        self.factors_text.grid(row=0, column=0, sticky='nsew')
+        v_scrollbar_factors.grid(row=0, column=1, sticky='ns')
+        h_scrollbar_factors.grid(row=1, column=0, sticky='ew')
+
+        factors_container.grid_rowconfigure(0, weight=1)
+        factors_container.grid_columnconfigure(0, weight=1)
         
         # R² frame
-        self.r2_frame = ttk.LabelFrame(scrollable_results_frame, text="Model Fit (R²)", padding=(10,5,10,10))
+        self.r2_frame = ttk.LabelFrame(results_frame, text="Model Fit (R²)", padding=(10,5,10,10))
         self.r2_frame.pack(fill='x', pady=(0,10))
         
         # Initialize R² text widget
@@ -320,7 +358,14 @@ class CSRApp:
                             font=self.text_widget_font, relief=tk.SOLID, borderwidth=1, padx=5)
         self.r2_text.pack(fill='x', padx=5, pady=5)
 
-        # === Right Panel Contents (PanedWindow) ===
+        # === Right Panel Contents ===
+        right_frame = ttk.Frame(right_scrollable_frame, style="App.TFrame", padding=0)
+        right_frame.pack(fill='both', expand=True)
+
+        # Create vertical paned window for plots
+        right_paned = tk.PanedWindow(right_frame, orient=tk.VERTICAL, sashrelief=tk.GROOVE, sashwidth=8, background="#D0D0D0", bd=0)
+        right_paned.pack(fill='both', expand=True, padx=5, pady=0)
+
         plot1_frame = ttk.LabelFrame(right_paned, text="Actual vs. Predicted Values", padding=10)
         right_paned.add(plot1_frame)
         right_paned.paneconfig(plot1_frame)
@@ -357,6 +402,9 @@ class CSRApp:
         toolbar2.configure(background='#F0F0F0')
         for child_widget in toolbar2.winfo_children(): child_widget.configure(background='#F0F0F0')
 
+        # Update the UI after initial setup
+        self._update_csr_factor_limits_ui()
+
     # CSR Limits Management Methods
     def _csr_add_limit(self):
         """Add a new limit with selected factors"""
@@ -369,7 +417,7 @@ class CSRApp:
             messagebox.showwarning("Invalid Value", "Limit value must be positive.")
             return
             
-        # Get selected factors from checkboxes (much simpler!)
+        # Get selected factors from checkboxes
         selected_factors = []
         for i, var in self.csr_factor_checkboxes.items():
             if var.get():  # Checkbox is checked
@@ -379,14 +427,14 @@ class CSRApp:
             messagebox.showwarning("No Selection", "Please select at least one factor for the limit.")
             return
             
-        # Add limit to CSR limits
+        # Add limit to CSR limits - CHANGE: Add constraint type option
         limit_name = f"limit_{len(self.csr_limits) + 1}"
         self.csr_limits[limit_name] = {
             'factors': selected_factors,
             'value': limit_value,
-            'type': 'sum'  # Default to sum constraint
+            'type': 'sum_equality'  # CHANGE: Use equality constraint
         }
-        self.csr_limit_names[limit_name] = f"Limit {len(self.csr_limits)}: Sum of F{','.join(map(str, [f+1 for f in selected_factors]))} ≤ {limit_value}"
+        self.csr_limit_names[limit_name] = f"Limit {len(self.csr_limits)}: Sum of F{','.join(map(str, [f+1 for f in selected_factors]))} = {limit_value}"
         
         # Update limits display
         self._csr_update_limits_display()
@@ -447,6 +495,33 @@ class CSRApp:
             checkbox.pack(side='left', padx=(0,10))
             
             self.csr_factor_checkboxes[i] = var  # Store by index
+    
+    # Add this helper method
+    def _update_show_all_combinations(self):
+        """Update the display when the show all combinations option changes"""
+        if hasattr(self, 'coefficients') and self.coefficients is not None:
+            # Refresh the display with current results
+            if hasattr(self, 'result_functions'):
+                # For comprehensive optimization
+                result_min_max = {}
+                for result_col, func_data in self.result_functions.items():
+                    result_min_max[result_col] = {
+                        'min': func_data['min_val'],
+                        'max': func_data['max_val']
+                    }
+                self.update_comprehensive_results_display(result_min_max)
+            else:
+                # For single result optimization
+                n_factors = len(self.factor_cols)
+                equation_str, function_defs_str, factor_defs_str = self.generate_equation_and_definitions(
+                    self.coefficients, self.bits_array, n_factors)
+                # Get R² value
+                if hasattr(self, 'X') and self.X is not None:
+                    X_design = self.create_design_matrix(self.X, self.bits_array)
+                    train_r2 = np.corrcoef(self.y, self.y_pred)[0,1]**2 if hasattr(self, 'y_pred') and self.y_pred is not None else 0
+                else:
+                    train_r2 = 0
+                self.update_results_display(equation_str, function_defs_str, factor_defs_str, train_r2)
 
     def create_coefficient_analysis_tab(self):
             # Main container frame
@@ -612,12 +687,16 @@ class CSRApp:
         if self.df is None or self.df.empty:
             return
         
-        # Get all column names in order
+        # Get all column names in order (EXCLUDE 'residual')
         all_columns = [col for col in list(self.df.columns) if col != 'residual']
         
-        # Add combobox for all features
-        cb_options = ["parameter", "outcome", "ignore"]
+        # DEBUG: Show what columns we have
+        print(f"DEBUG: Available columns: {all_columns}")
         
+        # Add combobox for all features
+        cb_options = ["parameter", "outcome(+)", "outcome(-)", "ignore"]
+        
+        # Create selection for each column
         for i, col in enumerate(all_columns):
             display_name = self.col_name_mapping.get(col, col)
             
@@ -625,10 +704,16 @@ class CSRApp:
             cb_frame = ttk.Frame(self.factor_selection_frame, style="App.TFrame")
             cb_frame.pack(fill='x', pady=2)
             
-            var = tk.StringVar(value="result" if i == len(all_columns)-1 else "factor")
-            lbl = ttk.Label(cb_frame, text=display_name)
+            # Determine default value - LAST column should be outcome, others parameters
+            if i == len(all_columns) - 1:  # Last column default to outcome
+                var = tk.StringVar(value="outcome(+)")
+            else:
+                var = tk.StringVar(value="parameter")
+            
+            lbl = ttk.Label(cb_frame, text=f"{display_name} ({col})", width=30)  # Show both names for debugging
             lbl.pack(side='left', padx=(0,10))
-            cb = ttk.Combobox(cb_frame, value=cb_options, textvariable=var)
+            
+            cb = ttk.Combobox(cb_frame, values=cb_options, textvariable=var, width=12)
             cb.set(var.get())
             cb.pack(side='left', padx=(0,10))
             self.factor_checkboxes[col] = var
@@ -654,14 +739,6 @@ class CSRApp:
                     widget.config(state='disabled')
                 except tk.TclError:
                     pass  # Widget might not exist anymore
-
-        # Clear individual results frame if it exists
-        if hasattr(self, 'individual_results_frame'):
-            try:
-                for widget in self.individual_results_frame.winfo_children():
-                    widget.destroy()
-            except tk.TclError:
-                pass
 
         # Clear R² frame if it exists
         if hasattr(self, 'r2_frame'):
@@ -722,22 +799,29 @@ class CSRApp:
             if hasattr(self, 'factor_checkboxes'):
                 current_states = {col: var.get() for col, var in self.factor_checkboxes.items()}
                 
-            # Get selected columns - use current_states if available, otherwise default to last column
-
+            # Get selected columns
             if current_states:
                 self.result_cols = [col for col, state in current_states.items() 
-                                  if state == "result" and col != "residual"]
-                self.factor_cols = [col for col, state in current_states.items() if state == "factor" and col != "residual"]
+                                if state.startswith("outcome") and col != "residual"]
+                self.factor_cols = [col for col, state in current_states.items() if state == "parameter" and col != "residual"]
             else:
-                # Default to just the result column if no checkboxes exist yet
+                # Default to just the outcome column if no checkboxes exist yet
                 self.result_cols = ["result"]
             
             if not self.result_cols:
                 raise ValueError("Please select at least one result factor.")
 
+            # DEBUG: Print what we're detecting
+            print(f"DEBUG: Number of outcome columns: {len(self.result_cols)}")
+            print(f"DEBUG: Outcome columns: {self.result_cols}")
+            print(f"DEBUG: Factor columns: {self.factor_cols}")
+
+            # MODIFIED: Use single result fitting for single outcome, comprehensive for multiple
             if len(self.result_cols) == 1:
+                print("DEBUG: Using SINGLE result fitting")
                 self._run_single_result_fitting(self.result_cols[0])
             else:
+                print("DEBUG: Using COMPREHENSIVE fitting")
                 self._run_comprehensive_fitting()
                 
             # Update table view while preserving checkbox states
@@ -769,9 +853,8 @@ class CSRApp:
             
             # Create a working dataframe with just the needed columns
             working_df = self.df[working_cols].copy()
-            
-            # Rename the result column to 'result' for consistency
-            if result_col != 'result':
+
+            if result_col != 'result':  
                 working_df = working_df.rename(columns={result_col: 'result'})
             
             self.factor_cols = [col for col in working_df.columns if col.startswith('factor')]
@@ -851,12 +934,30 @@ class CSRApp:
             n_factors = len(self.factor_cols)
             all_extremum_results = []
             
-            # Run optimization for ALL numbers of factors from n_factors down to 1
-            for k in range(n_factors, 0, -1):  # Changed to go from max to min
-                print(f"Running optimization for {k} active factors...")
-                extremum_result = self.find_extremum_with_active_factors(
-                    self.coefficients, self.bits_array, bounds_opt, x0_opt, 
-                    extremum_type_str, self.X, str(k))
+            # SIMPLIFIED: Just run one optimization without artificial cardinality constraints
+            print("Running optimization...")
+            extremum_result = self.find_extremum(
+                self.coefficients, self.bits_array, bounds_opt, x0_opt, 
+                extremum_type_str, self.X)
+
+            # Create results for all factor counts based on the single optimal solution
+            if extremum_result and 'x' in extremum_result and extremum_result['x'] is not None:
+                self.all_extremum_results = []
+                optimal_x = extremum_result['x']
+                
+                # Count how many factors are significantly non-zero in the optimal solution
+                significant_factors = np.sum(np.abs(optimal_x) > 1e-3)
+                
+                # Create results for all numbers of factors from 1 to the actual number used
+                for k in range(1, significant_factors + 1):
+                    # For k < significant_factors, we could create sub-optimal solutions
+                    # but for now, just use the same optimal solution for all
+                    self.all_extremum_results.append({
+                        'active_factors': k,
+                        'result': extremum_result
+                    })
+                
+                self.extremum_point = extremum_result
                 
                 # Only add if we got a valid result that matches the constraint
                 if extremum_result and 'x' in extremum_result and extremum_result['x'] is not None:
@@ -901,76 +1002,91 @@ class CSRApp:
             self.all_extremum_results = all_extremum_results
             print(f"Total cardinality-constrained results stored: {len(self.all_extremum_results)}")
 
-            # CREATE RESULTS FOR ALL MISSING FACTOR COUNTS (8 down to 1)
-            if self.all_extremum_results:
-                # Create a set of factor counts we already have
-                existing_counts = {r['active_factors'] for r in self.all_extremum_results}
-                print(f"Existing factor counts: {sorted(existing_counts)}")
-                
-                # Create results for ALL factor counts from n_factors down to 1
-                all_factor_counts = list(range(n_factors, 0, -1))
-                print(f"Target factor counts: {all_factor_counts}")
-                
-                for k in all_factor_counts:
-                    if k not in existing_counts:
-                        print(f"Creating result for missing factor count: {k}")
-                        
-                        # Find the best available result to use as base
-                        # Prefer results with higher factor counts
-                        base_result = None
-                        for test_k in range(k, n_factors + 1):
-                            if test_k in existing_counts:
-                                base_result = next(r for r in self.all_extremum_results if r['active_factors'] == test_k)
-                                break
-                        
-                        # If no higher count found, use the highest available
-                        if base_result is None:
-                            base_result = max(self.all_extremum_results, key=lambda x: x['active_factors'])
-                        
-                        original_result = base_result['result']
-                        original_x = original_result['x']
-                        
-                        # Create new solution with exactly k active factors
-                        # Find the k factors with largest absolute values
-                        factor_values = [(i, abs(val)) for i, val in enumerate(original_x)]
-                        factor_values.sort(key=lambda x: x[1], reverse=True)
-                        
-                        # Keep only the top k factors, set others to zero
-                        new_x = np.zeros_like(original_x)
-                        for i in range(min(k, len(factor_values))):
-                            idx = factor_values[i][0]
-                            new_x[idx] = original_x[idx]
-                        
-                        # Recalculate the objective value with the new solution
-                        if self.norm_select.get() == "[-1, 1]":
-                            new_x_norm = 2 * (new_x - self.norm_x_min) / (self.norm_x_max - self.norm_x_min) - 1
-                        elif self.norm_select.get() == "[0, 1]":
-                            new_x_norm = (new_x - self.norm_x_min) / (self.norm_x_max - self.norm_x_min)
-                        else:
-                            new_x_norm = new_x
-                        
-                        design_row = self.create_design_matrix(new_x_norm.reshape(1, -1), self.bits_array)
-                        new_value = np.dot(design_row[0], self.coefficients)
-                        
-                        new_result = {
-                            'x': new_x,
-                            'value': new_value,
-                            'x_normalized': new_x_norm,
-                            'active_factors_count': k
-                        }
-                        
-                        self.all_extremum_results.append({
-                            'active_factors': k,
-                            'result': new_result
-                        })
-                        print(f"Created result for k={k} with value: {new_value:.4f}")
-                
-                # Re-sort all results by factor count (descending)
-                self.all_extremum_results.sort(key=lambda x: x['active_factors'], reverse=True)
-                print(f"Final results count: {len(self.all_extremum_results)}")
+            # CREATE RESULTS BASED ON USER PREFERENCE
+            if self.show_all_combinations_var.get():
+                # Show all combinations from N down to 1 (original behavior)
+                if self.all_extremum_results:
+                    # Create a set of factor counts we already have
+                    existing_counts = {r['active_factors'] for r in self.all_extremum_results}
+                    print(f"Existing factor counts: {sorted(existing_counts)}")
+                    
+                    # Create results for ALL factor counts from n_factors down to 1
+                    all_factor_counts = list(range(n_factors, 0, -1))
+                    print(f"Target factor counts: {all_factor_counts}")
+                    
+                    for k in all_factor_counts:
+                        if k not in existing_counts:
+                            print(f"Creating result for missing factor count: {k}")
+                            
+                            # Find the best available result to use as base
+                            # Prefer results with higher factor counts
+                            base_result = None
+                            for test_k in range(k, n_factors + 1):
+                                if test_k in existing_counts:
+                                    base_result = next(r for r in self.all_extremum_results if r['active_factors'] == test_k)
+                                    break
+                            
+                            # If no higher count found, use the highest available
+                            if base_result is None:
+                                base_result = max(self.all_extremum_results, key=lambda x: x['active_factors'])
+                            
+                            original_result = base_result['result']
+                            original_x = original_result['x']
+                            
+                            # Create new solution with exactly k active factors
+                            # Find the k factors with largest absolute values
+                            factor_values = [(i, abs(val)) for i, val in enumerate(original_x)]
+                            factor_values.sort(key=lambda x: x[1], reverse=True)
+                            
+                            # Keep only the top k factors, set others to zero
+                            new_x = np.zeros_like(original_x)
+                            for i in range(min(k, len(factor_values))):
+                                idx = factor_values[i][0]
+                                new_x[idx] = original_x[idx]
+                            
+                            # Recalculate the objective value with the new solution
+                            if self.norm_select.get() == "[-1, 1]":
+                                new_x_norm = 2 * (new_x - self.norm_x_min) / (self.norm_x_max - self.norm_x_min) - 1
+                            elif self.norm_select.get() == "[0, 1]":
+                                new_x_norm = (new_x - self.norm_x_min) / (self.norm_x_max - self.norm_x_min)
+                            else:
+                                new_x_norm = new_x
+                            
+                            design_row = self.create_design_matrix(new_x_norm.reshape(1, -1), self.bits_array)
+                            new_value = np.dot(design_row[0], self.coefficients)
+                            
+                            new_result = {
+                                'x': new_x,
+                                'value': new_value,
+                                'x_normalized': new_x_norm,
+                                'active_factors_count': k
+                            }
+                            
+                            self.all_extremum_results.append({
+                                'active_factors': k,
+                                'result': new_result
+                            })
+                            print(f"Created result for k={k} with value: {new_value:.4f}")
+                    
+                    # Re-sort all results by factor count (descending)
+                    self.all_extremum_results.sort(key=lambda x: x['active_factors'], reverse=True)
+                    print(f"Final results count: {len(self.all_extremum_results)}")
+            else:
+                # Only show the case with all factors
+                if self.all_extremum_results:
+                    # Filter to keep only the result with all factors
+                    full_result = next((r for r in self.all_extremum_results if r['active_factors'] == n_factors), None)
+                    if full_result:
+                        self.all_extremum_results = [full_result]
+                        print("Showing only full factor combination")
+                    else:
+                        # If no full result, use the one with highest factor count
+                        highest_result = max(self.all_extremum_results, key=lambda x: x['active_factors'])
+                        self.all_extremum_results = [highest_result]
+                        print(f"Showing highest available factor combination: {highest_result['active_factors']} factors")
 
             # FALLBACK: If no cardinality results at all, create from regular optimization
-            elif self.extremum_point and 'x' in self.extremum_point:
+            if not self.all_extremum_results and self.extremum_point and 'x' in self.extremum_point:
                 print("No cardinality-constrained results found, creating from regular optimization")
                 extremum_x = self.extremum_point['x']
                 active_count = sum(1 for val in extremum_x if abs(val) > 1e-6)
@@ -1010,11 +1126,6 @@ class CSRApp:
             # Generate equation and definitions
             equation_str, function_defs_str, factor_defs_str = self.generate_equation_and_definitions(
                 self.coefficients, self.bits_array, n_factors)
-
-            # Clear individual results frame for single optimization
-            if hasattr(self, 'individual_results_frame'):
-                for widget in self.individual_results_frame.winfo_children():
-                    widget.destroy()
                         
             # Clear R² frame for single optimization
             if hasattr(self, 'r2_frame'):
@@ -1074,11 +1185,19 @@ class CSRApp:
 
         except Exception as e:
             raise Exception(f"Single result fitting failed: {str(e)}")
-
+        
     def _run_comprehensive_fitting(self):
         """Handle fitting for multiple result columns (comprehensive optimization)"""
         try:
+            print(f"DEBUG: Running comprehensive fitting with {len(self.result_cols)} outcomes")
+            print(f"DEBUG: Outcome columns: {self.result_cols}")
+            
+            # FIX: Add validation for factor columns
+            if not hasattr(self, 'factor_cols') or not self.factor_cols:
+                raise ValueError("No factor columns available for comprehensive fitting")
+                
             self.X_original_scale = self.df[self.factor_cols].values
+            
             # First fit individual CSR functions for each result
             self.result_functions = {}
             result_min_max = {}
@@ -1086,12 +1205,21 @@ class CSRApp:
             # Initialize residuals column
             self.df['residual'] = 0.0
             
+            self.result_functions = {}
+            result_min_max = {}
+            self.outcome_polarities = {}  # Store polarity for each outcome
+
             for result_col in self.result_cols:
+                # Determine polarity from checkbox selection
+                polarity = 1  # Default to positive
+                if self.factor_checkboxes[result_col].get() == "outcome(-)":
+                    polarity = -1
+                
                 # Create temporary df with this result column
                 temp_df = self.df[self.factor_cols + [result_col]].copy()
                 temp_df.columns = [f"factor{i+1}" for i in range(len(self.factor_cols))] + ["result"]
                 
-                # Store min/max for normalization
+                # Store min/max for reference
                 result_min_max[result_col] = {
                     'min': temp_df['result'].min(),
                     'max': temp_df['result'].max()
@@ -1129,15 +1257,15 @@ class CSRApp:
                 y_pred = model.predict(X_design)
                 residuals = y_fit - y_pred
 
-                # Calculate RMSE (no MSE calculation)
+                # Calculate RMSE
                 rmse = np.sqrt(np.mean(residuals ** 2))
 
-                # Store the function and update residuals
+                # Store the function with polarity
                 self.result_functions[result_col] = {
                     'coefficients': model.coef_,
                     'bits_array': bits_array,
-                    'x_min': x_min if norm_type != "None" else None,
-                    'x_max': x_max if norm_type != "None" else None,
+                    'x_min': x_min if norm_type != "No normalization" else None,
+                    'x_max': x_max if norm_type != "No normalization" else None,
                     'norm_type': norm_type,
                     'model': model,
                     'X_design': X_design,
@@ -1146,32 +1274,108 @@ class CSRApp:
                     'residuals': residuals,
                     'min_val': result_min_max[result_col]['min'],
                     'max_val': result_min_max[result_col]['max'],
-                    'rmse': rmse,  # Store RMSE only
+                    'rmse': rmse,
+                    'polarity': polarity
                 }
+                
+                # Store polarity separately for display
+                self.outcome_polarities[result_col] = polarity
                 
                 # Add residuals to main dataframe (average if multiple results)
                 self.df['residual'] += residuals / len(self.result_cols)
             
-            # Create comprehensive function
+            # CALCULATE INDIVIDUAL EXTREMUM VALUES
+            print("DEBUG: Calculating individual extremum values...")
+            for result_col, func_data in self.result_functions.items():
+                # Set up optimization parameters for this outcome
+                bounds_individual = [(self.df[col].min(), self.df[col].max()) for col in self.factor_cols]
+                x0_individual = np.array([(min_val + max_val)/2 for min_val, max_val in bounds_individual])
+                
+                # Find individual extremum using improved method
+                individual_extremum = self._find_individual_extremum(
+                    func_data['coefficients'], 
+                    func_data['bits_array'],
+                    bounds_individual,
+                    x0_individual,
+                    self.weight_combo.get().lower().replace(" ", "_"),
+                    func_data['X_design']
+                )
+                
+                # Store the extremum value with better fallback
+                if individual_extremum and 'value' in individual_extremum and not np.isnan(individual_extremum['value']):
+                    func_data['extremum_val'] = individual_extremum['value']
+                    print(f"DEBUG: {result_col} individual extremum: {individual_extremum['value']:.4f}")
+                else:
+                    # Better fallback: use data range
+                    data_range = func_data['max_val'] - func_data['min_val']
+                    if data_range > 1e-9:
+                        if self.weight_combo.get() == "Maximum":
+                            func_data['extremum_val'] = func_data['max_val']
+                        elif self.weight_combo.get() == "Minimum":
+                            func_data['extremum_val'] = func_data['min_val']
+                        else:
+                            # For absolute value objectives, use the larger absolute value
+                            max_abs = max(abs(func_data['min_val']), abs(func_data['max_val']))
+                            func_data['extremum_val'] = max_abs
+                    else:
+                        func_data['extremum_val'] = 1.0  # Default to 1 to avoid division by zero
+                    print(f"DEBUG: {result_col} using fallback extremum: {func_data['extremum_val']:.4f}")
+            
+            # Create comprehensive function - IMPROVED NORMALIZATION
             def comprehensive_func(x):
                 total = 0
+                valid_outcomes = 0
+                
                 for result_col, func_data in self.result_functions.items():
-                    # Evaluate individual function
+                    # Evaluate individual CSR function
                     if func_data['norm_type'] == "[-1, 1]":
                         x_norm = 2 * (x - func_data['x_min']) / (func_data['x_max'] - func_data['x_min']) - 1
                     elif func_data['norm_type'] == "[0, 1]":
                         x_norm = (x - func_data['x_min']) / (func_data['x_max'] - func_data['x_min'])
-                    else:  # "No normalization"
+                    else:
                         x_norm = x
                         
                     design_row = self.create_design_matrix(x_norm.reshape(1, -1), func_data['bits_array'])
                     val = np.dot(design_row[0], func_data['coefficients'])
                     
-                    # Normalize and add to total
-                    norm_val = (val - func_data['min_val']) / (func_data['max_val'] - func_data['min_val'])
-                    total += norm_val
-                return total
-            
+                    # FIX: Use CSR function extremum value for normalization
+                    extremum_value = func_data.get('extremum_val', 0)
+                    
+                    if abs(extremum_value) > 1e-9:
+                        # Normalize by how close we are to the extremum
+                        # For maximum: val/extremum_value (closer to 1 is better)
+                        # For minimum: extremum_value/val (closer to 1 is better)
+                        # For absolute values: |val|/extremum_value (closer to 1 is better)
+                        
+                        if self.weight_combo.get() == "Maximum":
+                            normalized_val = val / extremum_value
+                        elif self.weight_combo.get() == "Minimum":
+                            normalized_val = extremum_value / val if abs(val) > 1e-9 else 0.0
+                        elif "absolute value" in self.weight_combo.get().lower():
+                            normalized_val = abs(val) / abs(extremum_value)
+                        else:
+                            normalized_val = val / extremum_value  # Default to maximum behavior
+                    else:
+                        normalized_val = 0.0
+                    
+                    # Apply polarity and ensure values are reasonable
+                    polarity = func_data.get('polarity', 1)
+                    
+                    # Handle edge cases and ensure normalized_val is in reasonable range
+                    if np.isnan(normalized_val) or np.isinf(normalized_val):
+                        normalized_val = 0.0
+                    elif abs(normalized_val) > 10:  # Cap extreme values
+                        normalized_val = 10.0 if normalized_val > 0 else -10.0
+                    
+                    total += polarity * normalized_val
+                    valid_outcomes += 1
+                    
+                # Return average
+                if valid_outcomes > 0:
+                    return total / valid_outcomes
+                else:
+                    return 0.0
+                
             self.comprehensive_function = comprehensive_func
             
             # Set bounds in original scale regardless of normalization
@@ -1186,17 +1390,42 @@ class CSRApp:
 
             # Run optimization for each possible number of active factors (1 to N)
             for k in range(1, n_factors + 1):
+                print(f"DEBUG: Running comprehensive optimization for {k} active factors")
                 extremum_result = self.find_extremum_comprehensive_with_active_factors(
                     bounds_opt, x0_opt, extremum_type_str, str(k))
                 
                 if extremum_result and 'x' in extremum_result and extremum_result['x'] is not None:
-                    all_extremum_results.append({
-                        'active_factors': k,
-                        'result': extremum_result
-                    })
+                    # Verify the result has the expected number of active factors
+                    active_count = extremum_result.get('active_factors_count', 0)
+                    if active_count == k:
+                        all_extremum_results.append({
+                            'active_factors': k,
+                            'result': extremum_result
+                        })
+                        print(f"DEBUG: Successfully added result for {k} active factors")
+                    else:
+                        print(f"DEBUG: Skipping result for k={k}: expected {k} factors but got {active_count}")
 
-            # Store all results and use the one with all factors active as the main result
-            self.all_extremum_results = all_extremum_results
+            # Store all results and filter based on user preference
+            if self.show_all_combinations_var.get():
+                # Store all results
+                self.all_extremum_results = all_extremum_results
+                print(f"Storing all {len(self.all_extremum_results)} factor combinations")
+            else:
+                # Only store the result with all factors active
+                full_result = next((r for r in all_extremum_results if r['active_factors'] == n_factors), None)
+                if full_result:
+                    self.all_extremum_results = [full_result]
+                    print("Storing only full factor combination for comprehensive optimization")
+                else:
+                    # Fallback to highest available
+                    if all_extremum_results:
+                        highest_result = max(all_extremum_results, key=lambda x: x['active_factors'])
+                        self.all_extremum_results = [highest_result]
+                        print(f"Storing highest available: {highest_result['active_factors']} factors")
+                    else:
+                        self.all_extremum_results = []
+                        print("No valid comprehensive optimization results found")
 
             # Use the result with all factors active as the main display
             if all_extremum_results:
@@ -1206,6 +1435,7 @@ class CSRApp:
                 self.extremum_point = full_result['result']
             else:
                 # Fallback to regular optimization if no cardinality-constrained results
+                print("DEBUG: Falling back to regular comprehensive optimization")
                 self.extremum_point = self.find_extremum_comprehensive(bounds_opt, x0_opt, extremum_type_str)
 
             # Update displays
@@ -1225,7 +1455,90 @@ class CSRApp:
             self.plot_results(n_factors)
 
         except Exception as e:
+            import traceback
+            print(f"DEBUG: Comprehensive fitting error: {str(e)}")
+            print(f"DEBUG: Traceback: {traceback.format_exc()}")
             raise Exception(f"Comprehensive fitting failed: {str(e)}")
+
+    def _find_individual_extremum(self, coefficients, bits_array, bounds, x0, extremum_type, X_context=None):
+        """Find extremum for an individual outcome function with better error handling"""
+        if coefficients is None or bits_array is None:
+            print("DEBUG: Individual extremum - coefficients or bits_array is None")
+            return None
+        
+        def individual_func(x_point):
+            try:
+                x_point_reshaped = np.array(x_point).reshape(1, -1)
+                design_row = self.create_design_matrix(x_point_reshaped, bits_array)
+                if design_row.shape[1] == 0: 
+                    return 0
+                return np.dot(design_row[0], coefficients)
+            except Exception as e:
+                print(f"DEBUG: Error in individual_func: {e}")
+                return 0
+        
+        # Set up objective function
+        if extremum_type == 'maximum':
+            objective_to_minimize = lambda x_vals: -individual_func(x_vals)
+        elif extremum_type == 'minimum':
+            objective_to_minimize = individual_func
+        elif extremum_type == 'maximum_absolute_value':
+            objective_to_minimize = lambda x_vals: -np.abs(individual_func(x_vals))
+        elif extremum_type == 'minimum_absolute_value':
+            objective_to_minimize = lambda x_vals: np.abs(individual_func(x_vals))
+        else:
+            objective_to_minimize = individual_func
+        
+        try:
+            res = minimize(objective_to_minimize, x0, bounds=bounds, method='L-BFGS-B')
+            
+            if res.success:
+                calculated_value = individual_func(res.x)
+                print(f"DEBUG: Individual extremum found: {calculated_value:.4f}")
+                return {
+                    'x': res.x,
+                    'value': calculated_value
+                }
+            else:
+                print(f"DEBUG: Individual extremum optimization failed: {res.message}")
+                
+                # Try a simpler approach - evaluate at bounds and center
+                test_points = [
+                    x0,  # Center point
+                    [b[0] for b in bounds],  # Lower bounds
+                    [b[1] for b in bounds]   # Upper bounds
+                ]
+                
+                best_value = None
+                best_point = None
+                
+                for point in test_points:
+                    try:
+                        value = individual_func(point)
+                        if best_value is None or (
+                            (extremum_type == 'maximum' and value > best_value) or
+                            (extremum_type == 'minimum' and value < best_value) or
+                            (extremum_type == 'maximum_absolute_value' and abs(value) > abs(best_value)) or
+                            (extremum_type == 'minimum_absolute_value' and abs(value) < abs(best_value))
+                        ):
+                            best_value = value
+                            best_point = point
+                    except:
+                        continue
+                
+                if best_value is not None:
+                    print(f"DEBUG: Using fallback extremum: {best_value:.4f}")
+                    return {
+                        'x': best_point,
+                        'value': best_value
+                    }
+                    
+        except Exception as e:
+            print(f"Individual extremum finding failed: {str(e)}")
+        
+        # Final fallback: return None to use data-based fallback
+        print("DEBUG: Individual extremum calculation completely failed")
+        return None
 
     def find_extremum_comprehensive_with_active_factors(self, bounds_for_opt, x0_for_opt, extremum_type, max_active_factors):
         """Find extremum for comprehensive function with constraint on number of active factors"""
@@ -1247,10 +1560,25 @@ class CSRApp:
         else:
             objective_to_minimize = comprehensive_func_for_optimizer
 
-        num_factors = len(x0_for_opt)
+        # FIX: Get the actual number of factors from the data, not from x0
+        if hasattr(self, 'factor_cols'):
+            num_factors = len(self.factor_cols)
+        else:
+            num_factors = len(x0_for_opt)  # Fallback
+        
         max_active = int(max_active_factors)
         
         print(f"Comprehensive optimization with max {max_active} active factors out of {num_factors} total factors")
+        
+        # FIX: Ensure bounds and initial guess match the expected factor count
+        if len(bounds_for_opt) != num_factors:
+            print(f"DEBUG: Adjusting bounds from {len(bounds_for_opt)} to {num_factors} factors")
+            # Use default bounds if mismatch
+            bounds_for_opt = [(self.df[col].min(), self.df[col].max()) for col in self.factor_cols]
+        
+        if len(x0_for_opt) != num_factors:
+            print(f"DEBUG: Adjusting initial guess from {len(x0_for_opt)} to {num_factors} factors")
+            x0_for_opt = np.array([(min_val + max_val)/2 for min_val, max_val in bounds_for_opt])
         
         # Add constraints from CSR limits
         constraints = []
@@ -1263,11 +1591,22 @@ class CSRApp:
                 def make_sum_constraint(factors_list, limit_val):
                     def constraint_func(x_orig):
                         total = sum(x_orig[i] for i in factors_list)
-                        return limit_val - total
+                        return limit_val - total  # total <= limit_val
                     return constraint_func
                 
                 constraint = {'type': 'ineq', 
                             'fun': make_sum_constraint(factors, limit_value)}
+                constraints.append(constraint)
+                
+            elif limit_type == 'sum_equality':  # NEW: Equality constraint
+                def make_sum_equality_constraint(factors_list, limit_val):
+                    def constraint_func(x_orig):
+                        total = sum(x_orig[i] for i in factors_list)
+                        return total - limit_val  # total - limit_val = 0 => total = limit_val
+                    return constraint_func
+                
+                constraint = {'type': 'eq',  # CHANGE: Use equality constraint type
+                            'fun': make_sum_equality_constraint(factors, limit_value)}
                 constraints.append(constraint)
                 
             elif limit_type == 'product':
@@ -1402,49 +1741,65 @@ class CSRApp:
             try:
                 self.factors_text.config(state='normal')
                 self.factors_text.delete(1.0, tk.END)
-                
+                                
                 if hasattr(self, 'all_extremum_results') and self.all_extremum_results:
-                    # Filter out any results that don't match the requested number of factors
-                    valid_results = []
-                    for result_info in self.all_extremum_results:
+                    # Check if we're showing all combinations or just one
+                    if len(self.all_extremum_results) > 1:
+                        # Show all results with separators - NO ACTIVE FACTOR FILTERING
+                        sorted_results = sorted(self.all_extremum_results, 
+                                            key=lambda x: x['active_factors'], reverse=True) 
+
+                        for result_info in sorted_results:
+                            k = result_info['active_factors']
+                            result = result_info['result']
+                            
+                            if result and 'x' in result and result['x'] is not None:
+                                # First line: Number of Factors
+                                self.factors_text.insert(tk.END, f"Number of Factors: {k}\n")
+                                
+                                # Second line: Extremum point with ALL factors (no filtering)
+                                all_factors = []
+                                for i, val in enumerate(result['x']):
+                                    # SHOW ALL FACTORS - no active factor filtering
+                                    factor_name = self.col_name_mapping.get(
+                                        self.factor_cols[i] if i < len(self.factor_cols) else f"Factor {i+1}",
+                                        f"c{i+1}"
+                                    )
+                                    all_factors.append(f"{factor_name}: {val:.4f}")
+                                
+                                if all_factors:
+                                    self.factors_text.insert(tk.END, f"Extremum point: {', '.join(all_factors)}\n")
+                                else:
+                                    self.factors_text.insert(tk.END, "Extremum point: No factors\n")
+                                
+                                # Third line: Extremum value
+                                self.factors_text.insert(tk.END, f"Extremum value: {result['value']:.4f}\n")
+                                
+                                # Blank line between results
+                                self.factors_text.insert(tk.END, "\n")
+                    else:
+                        # Only show the case with all factors
+                        result_info = self.all_extremum_results[0]
                         k = result_info['active_factors']
                         result = result_info['result']
-                        # Skip results where actual active count doesn't match requested
-                        if result and 'x' in result and result['x'] is not None:
-                            actual_count = result.get('active_factors_count', k) 
-                            # Only include if the actual number of active factors matches the requested
-                            if actual_count == k:
-                                valid_results.append(result_info)
-
-                    # Sort valid results by number of active factors (DESCENDING order - from max to 1)
-                    valid_results.sort(key=lambda x: x['active_factors'], reverse=True) 
-
-                    for result_info in valid_results:
-                        k = result_info['active_factors']
-                        result = result_info['result']
+                        
                         # First line: Number of Factors
                         self.factors_text.insert(tk.END, f"Number of Factors: {k}\n")
                         
-                        # Second line: Extremum point with selected factors
-                        active_factors = []
+                        # Second line: Extremum point with ALL factors
+                        all_factors = []
                         for i, val in enumerate(result['x']):
-                            if abs(val) > 1e-6:  # Consider factors > 1e-6 as active
-                                factor_name = self.col_name_mapping.get(
-                                    self.factor_cols[i] if i < len(self.factor_cols) else f"Factor {i+1}",
-                                    f"c{i+1}"
-                                )
-                                active_factors.append(f"{factor_name}: {val:.4f}")
+                            # SHOW ALL FACTORS - no active factor filtering
+                            factor_name = self.col_name_mapping.get(
+                                self.factor_cols[i] if i < len(self.factor_cols) else f"Factor {i+1}",
+                                f"c{i+1}"
+                            )
+                            all_factors.append(f"{factor_name}: {val:.4f}")
                         
-                        if active_factors:
-                            self.factors_text.insert(tk.END, f"Extremum point: {', '.join(active_factors)}\n")
-                        else:
-                            self.factors_text.insert(tk.END, "Extremum point: No active factors\n")
+                        self.factors_text.insert(tk.END, f"Extremum point: {', '.join(all_factors)}\n")
                         
                         # Third line: Extremum value
                         self.factors_text.insert(tk.END, f"Extremum value: {result['value']:.4f}\n")
-                        
-                        # Blank line between results
-                        self.factors_text.insert(tk.END, "\n")
                 
                 elif self.extremum_point and 'x' in self.extremum_point:
                     # Fallback to single result display
@@ -1454,21 +1809,20 @@ class CSRApp:
                         extremum_x = self.extremum_point['x']
                     
                     if extremum_x is not None:
-                        # First line: Number of Factors
-                        active_count = sum(1 for val in extremum_x if abs(val) > 1e-6)
-                        self.factors_text.insert(tk.END, f"Number of Factors: {active_count}\n")
+                        # First line: Number of Factors - just show total count
+                        total_factors = len(extremum_x)
+                        self.factors_text.insert(tk.END, f"Number of Factors: {total_factors}\n")
                         
-                        # Second line: Extremum point with selected factors
-                        active_factors = []
+                        # Second line: Extremum point with ALL factors
+                        all_factors = []
                         for i, val in enumerate(extremum_x):
-                            if abs(val) > 1e-6:
-                                factor_name = self.col_name_mapping.get(
-                                    self.factor_cols[i] if i < len(self.factor_cols) else f"Factor {i+1}",
-                                    f"c{i+1}"
-                                )
-                                active_factors.append(f"{factor_name}: {val:.4f}")
+                            factor_name = self.col_name_mapping.get(
+                                self.factor_cols[i] if i < len(self.factor_cols) else f"Factor {i+1}",
+                                f"c{i+1}"
+                            )
+                            all_factors.append(f"{factor_name}: {val:.4f}")
                         
-                        self.factors_text.insert(tk.END, f"Extremum point: {', '.join(active_factors)}\n")
+                        self.factors_text.insert(tk.END, f"Extremum point: {', '.join(all_factors)}\n")
                         
                         # Third line: Extremum value
                         self.factors_text.insert(tk.END, f"Extremum value: {self.extremum_point['value']:.4f}\n")
@@ -1476,28 +1830,6 @@ class CSRApp:
                 self.factors_text.config(state='disabled')
             except tk.TclError as e:
                 print(f"Error updating factors text: {e}")
-
-        # Update Extremum Value Display - Clear this since we're showing values in the factors text
-        if hasattr(self, 'value_text'):
-            try:
-                self.value_text.config(state='normal')
-                self.value_text.delete(1.0, tk.END)
-                self.value_text.config(state='disabled')
-            except tk.TclError as e:
-                print(f"Error updating value text: {e}")
-
-        # Update Extremum Value Display
-        if hasattr(self, 'value_text'):
-            try:
-                self.value_text.config(state='normal')
-                self.value_text.delete(1.0, tk.END)
-                
-                if self.extremum_point and 'value' in self.extremum_point:
-                    self.value_text.insert(tk.END, f"{self.extremum_point['value']:.4f}")
-                
-                self.value_text.config(state='disabled')
-            except tk.TclError as e:
-                print(f"Error updating value text: {e}")
                 
         # Add verification info (optional - for debugging)
         verification_info = self.verify_extremum_calculation()
@@ -1577,90 +1909,106 @@ class CSRApp:
             self.factors_text.delete(1.0, tk.END)
 
             if hasattr(self, 'all_extremum_results') and self.all_extremum_results:
-                # Sort results by number of active factors (DESCENDING)
-                sorted_results = sorted(self.all_extremum_results, 
-                                    key=lambda x: x['active_factors'], reverse=True)
-                
-                for result_info in sorted_results:
+                if len(self.all_extremum_results) > 1:
+                    # Show all results with separators
+                    sorted_results = sorted(self.all_extremum_results, 
+                                        key=lambda x: x['active_factors'], reverse=True)
+                    
+                    for result_info in sorted_results:
+                        k = result_info['active_factors']
+                        result = result_info['result']
+                        
+                        if result and 'x' in result and result['x'] is not None:
+                            # First line: Number of Factors
+                            self.factors_text.insert(tk.END, f"Number of Factors: {k}\n")
+                            
+                            # Second line: Extremum point with selected factors
+                            active_factors = []
+                            for i, val in enumerate(result['x']):
+                                if abs(val) > 1e-6:
+                                    factor_name = self.col_name_mapping.get(
+                                        self.factor_cols[i] if i < len(self.factor_cols) else f"Factor {i+1}",
+                                        f"c{i+1}"
+                                    )
+                                    active_factors.append(f"{factor_name}: {val:.4f}")
+                            
+                            self.factors_text.insert(tk.END, f"Extremum point: {', '.join(active_factors)}\n")
+                            
+                            # Third line: Individual outcome values at extremum
+                            if hasattr(self, 'result_functions'):
+                                outcome_values = []
+                                for result_col, func_data in self.result_functions.items():
+                                    # Calculate value for this outcome at extremum
+                                    x_point = result['x']
+                                    
+                                    # Normalize for each function
+                                    if func_data['norm_type'] == "[-1, 1]":
+                                        x_norm = 2 * (x_point - func_data['x_min']) / (func_data['x_max'] - func_data['x_min']) - 1
+                                    elif func_data['norm_type'] == "[0, 1]":
+                                        x_norm = (x_point - func_data['x_min']) / (func_data['x_max'] - func_data['x_min'])
+                                    else:
+                                        x_norm = x_point
+                                    
+                                    design_row = self.create_design_matrix(x_norm.reshape(1, -1), func_data['bits_array'])
+                                    val = np.dot(design_row[0], func_data['coefficients'])
+                                    
+                                    display_name = self.col_name_mapping.get(result_col, result_col)
+                                    polarity_symbol = "(+)" if func_data.get('polarity', 1) == 1 else "(-)"
+                                    outcome_values.append(f"{display_name}{polarity_symbol}: {val:.4f}")
+                                
+                                self.factors_text.insert(tk.END, f"Individual outcomes: {', '.join(outcome_values)}\n")
+                            
+                            # FIX: Only show comprehensive value if it's meaningful
+                            comp_value = result['value']
+                            if abs(comp_value) > 0.001:  # Only show if meaningful
+                                self.factors_text.insert(tk.END, f"Comprehensive score: {comp_value:.4f}\n")
+                            
+                            # Blank line between results
+                            self.factors_text.insert(tk.END, "\n")
+                else:
+                    # Show only one result
+                    result_info = self.all_extremum_results[0]
                     k = result_info['active_factors']
                     result = result_info['result']
-                        
-                    if result and 'x' in result and result['x'] is not None:
-                        # First line: Number of Factors
-                        self.factors_text.insert(tk.END, f"Number of Factors: {k}\n")
-                        
-                        # Second line: Extremum point with selected factors
-                        active_factors = []
-                        for i, val in enumerate(result['x']):
-                            if abs(val) > 1e-6:  # Consider factors > 1e-6 as active
-                                factor_name = self.col_name_mapping.get(
-                                    self.factor_cols[i] if i < len(self.factor_cols) else f"Factor {i+1}",
-                                    f"c{i+1}"
-                                )
-                                active_factors.append(f"{factor_name}: {val:.4f}")
-                        
-                        self.factors_text.insert(tk.END, f"Extremum point: {', '.join(active_factors)}\n")
-                        
-                        # Third line: Extremum value
-                        self.factors_text.insert(tk.END, f"Extremum value: {result['value']:.4f}\n")
-                        
-                        # Add constraint verification for this result if CSR limits exist
-                        if self.csr_limits:
-                            constraint_status = ""
-                            for limit_name, limit_data in self.csr_limits.items():
-                                factors = limit_data.get('factors', [])
-                                limit_value = limit_data.get('value', 0)
-                                limit_type = limit_data.get('type', 'sum')
-                                
-                                if limit_type == 'sum':
-                                    total = sum(result['x'][i] for i in factors)
-                                    status = "✓ SATISFIED" if total <= limit_value + 1e-6 else "✗ VIOLATED"
-                                    constraint_status += f"\n  Sum F{','.join(map(str, [f+1 for f in factors]))}: {total:.4f} ≤ {limit_value} {status}"
-                            
-                            if constraint_status:
-                                self.factors_text.insert(tk.END, f"Constraints:{constraint_status}\n")
-                        
-                        # Blank line between results
-                        self.factors_text.insert(tk.END, "\n")
-            
-            elif self.extremum_point and 'x' in self.extremum_point and self.extremum_point['x'] is not None:
-                # Fallback to single result display
-                extremum_x_original_scale = self.extremum_point['x']
-                
-                # First line: Number of Factors
-                active_count = sum(1 for val in extremum_x_original_scale if abs(val) > 1e-6)
-                self.factors_text.insert(tk.END, f"Number of Factors: {active_count}\n")
-                
-                # Second line: Extremum point with selected factors
-                active_factors = []
-                for i, val in enumerate(extremum_x_original_scale):
-                    if abs(val) > 1e-6:
-                        factor_name = self.col_name_mapping.get(
-                            self.factor_cols[i] if i < len(self.factor_cols) else f"Factor {i+1}",
-                            f"c{i+1}"
-                        )
-                        active_factors.append(f"{factor_name}: {val:.4f}")
-                
-                self.factors_text.insert(tk.END, f"Extremum point: {', '.join(active_factors)}\n")
-                
-                # Third line: Extremum value
-                self.factors_text.insert(tk.END, f"Extremum value: {self.extremum_point['value']:.4f}\n")
-                
-                # Add constraint verification if CSR limits exist
-                if self.csr_limits:
-                    constraint_status = ""
-                    for limit_name, limit_data in self.csr_limits.items():
-                        factors = limit_data.get('factors', [])
-                        limit_value = limit_data.get('value', 0)
-                        limit_type = limit_data.get('type', 'sum')
-                        
-                        if limit_type == 'sum':
-                            total = sum(extremum_x_original_scale[i] for i in factors)
-                            status = "✓ SATISFIED" if total <= limit_value + 1e-6 else "✗ VIOLATED"
-                            constraint_status += f"\n  Sum F{','.join(map(str, [f+1 for f in factors]))}: {total:.4f} ≤ {limit_value} {status}"
                     
-                    if constraint_status:
-                        self.factors_text.insert(tk.END, f"Constraints:{constraint_status}\n")
+                    # Same format as above but for single result
+                    self.factors_text.insert(tk.END, f"Number of Factors: {k}\n")
+                    
+                    active_factors = []
+                    for i, val in enumerate(result['x']):
+                        if abs(val) > 1e-6:
+                            factor_name = self.col_name_mapping.get(
+                                self.factor_cols[i] if i < len(self.factor_cols) else f"Factor {i+1}",
+                                f"c{i+1}"
+                            )
+                            active_factors.append(f"{factor_name}: {val:.4f}")
+                    
+                    self.factors_text.insert(tk.END, f"Extremum point: {', '.join(active_factors)}\n")
+                    
+                    if hasattr(self, 'result_functions'):
+                        outcome_values = []
+                        for result_col, func_data in self.result_functions.items():
+                            x_point = result['x']
+                            if func_data['norm_type'] == "[-1, 1]":
+                                x_norm = 2 * (x_point - func_data['x_min']) / (func_data['x_max'] - func_data['x_min']) - 1
+                            elif func_data['norm_type'] == "[0, 1]":
+                                x_norm = (x_point - func_data['x_min']) / (func_data['x_max'] - func_data['x_min'])
+                            else:
+                                x_norm = x_point
+                            
+                            design_row = self.create_design_matrix(x_norm.reshape(1, -1), func_data['bits_array'])
+                            val = np.dot(design_row[0], func_data['coefficients'])
+                            
+                            display_name = self.col_name_mapping.get(result_col, result_col)
+                            polarity_symbol = "(+)" if func_data.get('polarity', 1) == 1 else "(-)"
+                            outcome_values.append(f"{display_name}{polarity_symbol}: {val:.4f}")
+                        
+                        self.factors_text.insert(tk.END, f"Individual outcomes: {', '.join(outcome_values)}\n")
+                    
+                    # FIX: Only show comprehensive value if meaningful
+                    comp_value = result['value']
+                    if abs(comp_value) > 0.001:
+                        self.factors_text.insert(tk.END, f"Comprehensive score: {comp_value:.4f}\n")
 
             self.factors_text.config(state='disabled')
 
@@ -1670,120 +2018,90 @@ class CSRApp:
             self.value_text.delete(1.0, tk.END)
             self.value_text.config(state='disabled')
 
-
-        # Add individual results
+        # KEEP R² and RMSE display - this section should remain
         if hasattr(self, 'result_functions'):
-            # Create a grid layout for individual results
-            row_num = 0
-            for result_col, func_data in self.result_functions.items():
-                display_name = self.col_name_mapping.get(result_col, result_col)
+            # Clear R² frame first
+            if hasattr(self, 'r2_frame'):
+                for widget in self.r2_frame.winfo_children():
+                    widget.destroy()
                 
-                # Result frame for each individual CSR
-                result_frame = ttk.Frame(self.individual_results_frame)
-                result_frame.grid(row=row_num, column=0, sticky='ew', pady=(0,5))
-                
-                # Display name label
-                ttk.Label(result_frame, text=f"{display_name}:", font=self.label_font).grid(row=0, column=0, sticky='w')
-                
-                # Calculate extremum value for this individual CSR
-                x_norm = None
-                if func_data['norm_type'] == "[-1, 1]":
-                    x_norm = 2 * (self.extremum_point['x'] - func_data['x_min']) / (func_data['x_max'] - func_data['x_min']) - 1
-                elif func_data['norm_type'] == "[0, 1]":
-                    x_norm = (self.extremum_point['x'] - func_data['x_min']) / (func_data['x_max'] - func_data['x_min'])
-                else:
-                    x_norm = self.extremum_point['x']
-                
-                design_row = self.create_design_matrix(x_norm.reshape(1, -1), func_data['bits_array'])
-                val = np.dot(design_row[0], func_data['coefficients'])
-                
-                # Value at extremum
-                val_text = tk.Text(result_frame, height=1, width=15, wrap=tk.NONE, state='disabled',
-                                 font=self.text_widget_font, relief=tk.SOLID, borderwidth=1, padx=5)
-                val_text.grid(row=0, column=1, padx=(5,15), sticky='w')
-                val_text.config(state='normal')
-                val_text.insert(tk.END, f"{val:.4f}")
-                val_text.config(state='disabled')
-                
-                row_num += 1
-            
-            # Add R² values in a similar grid layout
-            r2_row_num = 0
-            for result_col, func_data in self.result_functions.items():
-                display_name = self.col_name_mapping.get(result_col, result_col)
-                r2 = func_data['model'].score(func_data['X_design'], func_data['y'])
-                rmse = func_data['rmse']  # Get the stored RMSE
-                
-                r2_frame = ttk.Frame(self.r2_frame)
-                r2_frame.grid(row=r2_row_num, column=0, sticky='ew', pady=(0,5))
-                
-                ttk.Label(r2_frame, text=f"{display_name}:", font=self.label_font).grid(row=0, column=0, sticky='w')
-                
-                # R² display
-                ttk.Label(r2_frame, text="R²:", font=self.label_font).grid(row=0, column=1, sticky='w', padx=(5,0))
-                r2_text = tk.Text(r2_frame, height=1, width=12, wrap=tk.NONE, state='disabled',
-                                font=self.text_widget_font, relief=tk.SOLID, borderwidth=1, padx=5)
-                r2_text.grid(row=0, column=2, padx=(2,10), sticky='w')
-                r2_text.config(state='normal')
-                r2_text.insert(tk.END, f"{r2:.4f}")
-                r2_text.config(state='disabled')
-                
-                # RMSE display
-                ttk.Label(r2_frame, text="RMSE:", font=self.label_font).grid(row=0, column=3, sticky='w')
-                rmse_text = tk.Text(r2_frame, height=1, width=12, wrap=tk.NONE, state='disabled',
-                                font=self.text_widget_font, relief=tk.SOLID, borderwidth=1, padx=5)
-                rmse_text.grid(row=0, column=4, padx=(2,10), sticky='w')
-                rmse_text.config(state='normal')
-                rmse_text.insert(tk.END, f"{rmse:.4f}")
-                rmse_text.config(state='disabled')
-                
-                # Add interpretation for R²
-                interpretation = ""
-                if r2 >= 0.9:
-                    interpretation = "Excellent fit"
-                elif r2 >= 0.7:
-                    interpretation = "Good fit"
-                elif r2 >= 0.5:
-                    interpretation = "Moderate fit"
-                else:
-                    interpretation = "Poor fit"
-                
-                interp_text = tk.Text(r2_frame, height=1, width=15, wrap=tk.NONE, state='disabled',
+                # Add R² values in a grid layout
+                r2_row_num = 0
+                for result_col, func_data in self.result_functions.items():
+                    display_name = self.col_name_mapping.get(result_col, result_col)
+                    r2 = func_data['model'].score(func_data['X_design'], func_data['y'])
+                    rmse = func_data['rmse']  # Get the stored RMSE
+                    
+                    r2_frame = ttk.Frame(self.r2_frame)
+                    r2_frame.grid(row=r2_row_num, column=0, sticky='ew', pady=(0,5))
+                    
+                    ttk.Label(r2_frame, text=f"{display_name}:", font=self.label_font).grid(row=0, column=0, sticky='w')
+                    
+                    # R² display
+                    ttk.Label(r2_frame, text="R²:", font=self.label_font).grid(row=0, column=1, sticky='w', padx=(5,0))
+                    r2_text = tk.Text(r2_frame, height=1, width=12, wrap=tk.NONE, state='disabled',
                                     font=self.text_widget_font, relief=tk.SOLID, borderwidth=1, padx=5)
-                interp_text.grid(row=0, column=5, padx=(5,0), sticky='w')
-                interp_text.config(state='normal')
-                interp_text.insert(tk.END, interpretation)
-                interp_text.config(state='disabled')
-                
-                r2_row_num += 1
+                    r2_text.grid(row=0, column=2, padx=(2,10), sticky='w')
+                    r2_text.config(state='normal')
+                    r2_text.insert(tk.END, f"{r2:.4f}")
+                    r2_text.config(state='disabled')
+                    
+                    # RMSE display
+                    ttk.Label(r2_frame, text="RMSE:", font=self.label_font).grid(row=0, column=3, sticky='w')
+                    rmse_text = tk.Text(r2_frame, height=1, width=12, wrap=tk.NONE, state='disabled',
+                                    font=self.text_widget_font, relief=tk.SOLID, borderwidth=1, padx=5)
+                    rmse_text.grid(row=0, column=4, padx=(2,10), sticky='w')
+                    rmse_text.config(state='normal')
+                    rmse_text.insert(tk.END, f"{rmse:.4f}")
+                    rmse_text.config(state='disabled')
+                    
+                    # Add interpretation for R²
+                    interpretation = ""
+                    if r2 >= 0.9:
+                        interpretation = "Excellent fit"
+                    elif r2 >= 0.7:
+                        interpretation = "Good fit"
+                    elif r2 >= 0.5:
+                        interpretation = "Moderate fit"
+                    else:
+                        interpretation = "Poor fit"
+                    
+                    interp_text = tk.Text(r2_frame, height=1, width=15, wrap=tk.NONE, state='disabled',
+                                        font=self.text_widget_font, relief=tk.SOLID, borderwidth=1, padx=5)
+                    interp_text.grid(row=0, column=5, padx=(5,0), sticky='w')
+                    interp_text.config(state='normal')
+                    interp_text.insert(tk.END, interpretation)
+                    interp_text.config(state='disabled')
+                    
+                    r2_row_num += 1
 
-            # Calculate and display average R² and RMSE
-            avg_r2 = np.mean([func['model'].score(func['X_design'], func['y']) for func in self.result_functions.values()])
-            avg_rmse = np.mean([func['rmse'] for func in self.result_functions.values()])
+                # Calculate and display average R² and RMSE
+                avg_r2 = np.mean([func['model'].score(func['X_design'], func['y']) for func in self.result_functions.values()])
+                avg_rmse = np.mean([func['rmse'] for func in self.result_functions.values()])
 
-            avg_frame = ttk.Frame(self.r2_frame)
-            avg_frame.grid(row=r2_row_num, column=0, sticky='ew', pady=(10,0))
+                avg_frame = ttk.Frame(self.r2_frame)
+                avg_frame.grid(row=r2_row_num, column=0, sticky='ew', pady=(10,0))
 
-            ttk.Label(avg_frame, text="Average R²:", font=(self.label_font.cget("family"), 
-                    self.label_font.cget("size"), "bold")).grid(row=0, column=0, sticky='w')
+                ttk.Label(avg_frame, text="Average R²:", font=(self.label_font.cget("family"), 
+                        self.label_font.cget("size"), "bold")).grid(row=0, column=0, sticky='w')
 
-            avg_r2_text = tk.Text(avg_frame, height=1, width=12, wrap=tk.NONE, state='disabled',
-                                font=self.text_widget_font, relief=tk.SOLID, borderwidth=1, padx=5)
-            avg_r2_text.grid(row=0, column=1, padx=(5,15), sticky='w')
-            avg_r2_text.config(state='normal')
-            avg_r2_text.insert(tk.END, f"{avg_r2:.4f}")
-            avg_r2_text.config(state='disabled')
+                avg_r2_text = tk.Text(avg_frame, height=1, width=12, wrap=tk.NONE, state='disabled',
+                                    font=self.text_widget_font, relief=tk.SOLID, borderwidth=1, padx=5)
+                avg_r2_text.grid(row=0, column=1, padx=(5,15), sticky='w')
+                avg_r2_text.config(state='normal')
+                avg_r2_text.insert(tk.END, f"{avg_r2:.4f}")
+                avg_r2_text.config(state='disabled')
 
-            # Average RMSE display
-            ttk.Label(avg_frame, text="Average RMSE:", font=(self.label_font.cget("family"), 
-                    self.label_font.cget("size"), "bold")).grid(row=0, column=2, sticky='w', padx=(10,0))
+                # Average RMSE display
+                ttk.Label(avg_frame, text="Average RMSE:", font=(self.label_font.cget("family"), 
+                        self.label_font.cget("size"), "bold")).grid(row=0, column=2, sticky='w', padx=(10,0))
 
-            avg_rmse_text = tk.Text(avg_frame, height=1, width=12, wrap=tk.NONE, state='disabled',
-                                font=self.text_widget_font, relief=tk.SOLID, borderwidth=1, padx=5)
-            avg_rmse_text.grid(row=0, column=3, padx=(5,0), sticky='w')
-            avg_rmse_text.config(state='normal')
-            avg_rmse_text.insert(tk.END, f"{avg_rmse:.4f}")
-            avg_rmse_text.config(state='disabled')
+                avg_rmse_text = tk.Text(avg_frame, height=1, width=12, wrap=tk.NONE, state='disabled',
+                                    font=self.text_widget_font, relief=tk.SOLID, borderwidth=1, padx=5)
+                avg_rmse_text.grid(row=0, column=3, padx=(5,0), sticky='w')
+                avg_rmse_text.config(state='normal')
+                avg_rmse_text.insert(tk.END, f"{avg_rmse:.4f}")
+                avg_rmse_text.config(state='disabled')
 
     def _generate_single_result_equation(self, beta, bits_array, n_factors):
         """Helper method to generate equation string for a single result (same as single optimization)"""
@@ -2032,9 +2350,9 @@ class CSRApp:
                     current_term_values_for_all_samples *= X_input_scaled[:, factor_idx]**power
             X_design[:, term_idx] = current_term_values_for_all_samples
         return X_design
-        
+            
     def find_extremum_with_active_factors(self, beta, bits_array, bounds_for_opt, x0_for_opt, extremum_type, X_context_for_opt, max_active_factors):
-        """Find extremum with constraint on number of active factors"""
+        """Simplified version - just run regular optimization without artificial constraints"""
         if beta is None or bits_array is None or X_context_for_opt is None:
             return {'x': np.array([]), 'value': np.nan}
         
@@ -2060,10 +2378,8 @@ class CSRApp:
         else:
             objective_to_minimize = csr_func_for_optimizer
 
-        num_factors = X_context_for_opt.shape[1]
-        max_active = int(max_active_factors)
-        
-        print(f"Optimizing with max {max_active} active factors out of {num_factors} total factors")
+        # SIMPLIFIED: Just run the optimization without artificial cardinality constraints
+        # The CSR limits will naturally constrain the solution space
         
         # Add constraints from CSR limits
         constraints = []
@@ -2084,7 +2400,7 @@ class CSRApp:
                             x_orig = x_norm
                         
                         total = sum(x_orig[i] for i in factors_list)
-                        return limit_val - total + 1e-4
+                        return limit_val - total  # total <= limit_val
                     return constraint_func
                 
                 constraint = {'type': 'ineq', 
@@ -2092,156 +2408,64 @@ class CSRApp:
                                                     self.norm_x_min, self.norm_x_max, 
                                                     self.norm_select.get())}
                 constraints.append(constraint)
-
-        # SIMPLIFIED APPROACH: Use heuristic for large numbers of factors
-        try:
-            # For small numbers of factors, use combination approach
-            if num_factors <= 8:  # Reasonable limit for combinations
-                best_result = None
-                best_value = float('inf') if extremum_type in ['minimum', 'minimum_absolute_value'] else float('-inf')
                 
-                # Generate all combinations of factors
-                from itertools import combinations
-                factor_indices = list(range(num_factors))
-                
-                total_combinations = math.comb(num_factors, max_active)
-                print(f"Trying {total_combinations} combinations for {max_active} active factors")
-                
-                if total_combinations > 1000:  # Limit to avoid combinatorial explosion
-                    print(f"Too many combinations ({total_combinations}), using heuristic approach")
-                    return self._find_extremum_heuristic(beta, bits_array, bounds_for_opt, x0_for_opt, extremum_type, X_context_for_opt, max_active_factors)
-                
-                for combo in combinations(factor_indices, max_active):
-                    print(f"Trying combination: {combo}")
-                    
-                    def constrained_objective(x_active):
-                        # Create full solution with only selected factors active
-                        x_full = np.zeros(num_factors)
-                        for i, factor_idx in enumerate(combo):
-                            x_full[factor_idx] = x_active[i]
-                        return objective_to_minimize(x_full)
-                    
-                    # Bounds for active factors only
-                    active_bounds = [bounds_for_opt[i] for i in combo]
-                    
-                    # Initial guess: use midpoint of bounds for active factors
-                    active_x0 = np.array([(bounds_for_opt[i][0] + bounds_for_opt[i][1]) / 2 for i in combo])
-                    
-                    # Recreate constraints for this combination
-                    active_constraints = []
-                    for limit_name, limit_data in self.csr_limits.items():
-                        factors = limit_data.get('factors', [])
-                        limit_value = limit_data.get('value', 0)
-                        limit_type = limit_data.get('type', 'sum')
-                        
-                        # Only include constraints that involve the active factors
-                        active_factors_in_limit = [f for f in factors if f in combo]
-                        if not active_factors_in_limit:
-                            continue
-                        
-                        if limit_type == 'sum':
-                            def make_active_sum_constraint(factors_list, limit_val, norm_min, norm_max, norm_type, combo_list):
-                                def constraint_func(x_active):
-                                    # Reconstruct full solution
-                                    x_full = np.zeros(num_factors)
-                                    for i, factor_idx in enumerate(combo_list):
-                                        x_full[factor_idx] = x_active[i]
-                                    
-                                    # Convert to original scale for constraint evaluation
-                                    if norm_type == "[-1, 1]":
-                                        x_orig = (x_full + 1) / 2 * (norm_max - norm_min) + norm_min
-                                    elif norm_type == "[0, 1]":
-                                        x_orig = x_full * (norm_max - norm_min) + norm_min
-                                    else:
-                                        x_orig = x_full
-                                    
-                                    total = sum(x_orig[i] for i in factors_list)
-                                    return limit_val - total
-                                return constraint_func
-                            
-                            constraint = {'type': 'ineq', 
-                                        'fun': make_active_sum_constraint(factors, limit_value, 
-                                                                        self.norm_x_min, self.norm_x_max, 
-                                                                        self.norm_select.get(), combo)}
-                            active_constraints.append(constraint)
-                    
-                    # Optimize this combination
-                    try:
-                        if active_constraints:
-                            res = minimize(constrained_objective, active_x0, bounds=active_bounds,
-                                        method='SLSQP', constraints=active_constraints, 
-                                        options={'disp': False, 'maxiter': 200})
+            elif limit_type == 'sum_equality':  # NEW: Equality constraint
+                def make_sum_equality_constraint(factors_list, limit_val, norm_min, norm_max, norm_type):
+                    def constraint_func(x_norm):
+                        # Convert normalized values back to original scale for constraint
+                        if norm_type == "[-1, 1]":
+                            x_orig = (x_norm + 1) / 2 * (norm_max - norm_min) + norm_min
+                        elif norm_type == "[0, 1]":
+                            x_orig = x_norm * (norm_max - norm_min) + norm_min
                         else:
-                            res = minimize(constrained_objective, active_x0, bounds=active_bounds,
-                                        method='L-BFGS-B', options={'disp': False})
+                            x_orig = x_norm
                         
-                        if res.success:
-                            # Reconstruct full solution
-                            x_final = np.zeros(num_factors)
-                            for i, factor_idx in enumerate(combo):
-                                x_final[factor_idx] = res.x[i]
-                            
-                            # Calculate final value
-                            current_value = csr_func_for_optimizer(x_final)
-                            
-                            # VERIFY that exactly max_active factors are active
-                            active_count = np.sum(np.abs(x_final) > 1e-6)
-                            if active_count != max_active:
-                                print(f"Warning: Combination {combo} has {active_count} active factors, expected {max_active}")
-                                continue  # Skip this result if it doesn't match the constraint
-                            
-                            # Check if this is the best solution so far
-                            is_better = False
-                            if extremum_type in ['maximum', 'maximum_absolute_value']:
-                                if current_value > best_value:
-                                    is_better = True
-                            else:  # minimum or minimum_absolute_value
-                                if current_value < best_value:
-                                    is_better = True
-                            
-                            if is_better:
-                                best_value = current_value
-                                # Convert to original scale
-                                if self.norm_select.get() == "[-1, 1]":
-                                    res_orig = (x_final + 1) / 2 * (self.norm_x_max - self.norm_x_min) + self.norm_x_min
-                                elif self.norm_select.get() == "[0, 1]":
-                                    res_orig = x_final * (self.norm_x_max - self.norm_x_min) + self.norm_x_min
-                                else:
-                                    res_orig = x_final
-                                
-                                best_result = {
-                                    'x': res_orig, 
-                                    'value': current_value,
-                                    'x_normalized': x_final,
-                                    'active_factors_count': max_active,
-                                    'active_factor_indices': list(combo)
-                                }
-                                print(f"New best solution found with value: {current_value:.4f}")
-                                
-                    except Exception as e:
-                        print(f"Optimization failed for combination {combo}: {str(e)}")
-                        continue
+                        total = sum(x_orig[i] for i in factors_list)
+                        return total - limit_val  # total - limit_val = 0 => total = limit_val
+                    return constraint_func
                 
-                if best_result is not None:
-                    print(f"Best solution found with exactly {max_active} active factors")
-                    return best_result
-                else:
-                    print(f"No valid solution found with exactly {max_active} active factors")
-                    return None
+                constraint = {'type': 'eq',  # CHANGE: Use equality constraint type
+                            'fun': make_sum_equality_constraint(factors, limit_value, 
+                                                            self.norm_x_min, self.norm_x_max, 
+                                                            self.norm_select.get())}
+                constraints.append(constraint)
+
+        # Perform optimization with CSR constraints only
+        try:
+            if constraints:
+                res = minimize(objective_to_minimize, x0_for_opt, bounds=bounds_for_opt, 
+                            method='SLSQP', constraints=constraints, options={'disp': False})
             else:
-                # For larger numbers of factors, use heuristic approach
-                return self._find_extremum_heuristic(beta, bits_array, bounds_for_opt, x0_for_opt, extremum_type, X_context_for_opt, max_active_factors)
-                    
+                res = minimize(objective_to_minimize, x0_for_opt, bounds=bounds_for_opt, 
+                            method='L-BFGS-B', options={'disp': False})
+            
+            if res.success:
+                # Convert to original scale
+                if self.norm_select.get() == "[-1, 1]":
+                    res_orig = (res.x + 1) / 2 * (self.norm_x_max - self.norm_x_min) + self.norm_x_min
+                elif self.norm_select.get() == "[0, 1]":
+                    res_orig = res.x * (self.norm_x_max - self.norm_x_min) + self.norm_x_min
+                else:
+                    res_orig = res.x
+                
+                # Calculate extremum value using normalized inputs directly
+                design_row_normalized = self.create_design_matrix(res.x.reshape(1, -1), bits_array)
+                extremum_value = np.dot(design_row_normalized[0], beta)
+                
+                return {
+                    'x': res_orig, 
+                    'value': extremum_value, 
+                    'x_normalized': res.x
+                }
+        
         except Exception as e:
-            print(f"Cardinality-constrained optimization failed: {str(e)}")
-            import traceback
-            traceback.print_exc()
+            print(f"Optimization failed: {str(e)}")
         
         return None
 
     def _find_extremum_heuristic(self, beta, bits_array, bounds_for_opt, x0_for_opt, extremum_type, X_context_for_opt, max_active_factors):
         """Heuristic approach for cardinality-constrained optimization for large factor counts"""
-        print(f"Using heuristic approach for {max_active_factors} active factors")
+        print(f"Using improved heuristic approach for {max_active_factors} active factors")
         
         def csr_func_for_optimizer(x_point_in_opt_scale):
             x_point_reshaped = np.array(x_point_in_opt_scale).reshape(1, -1)
@@ -2264,31 +2488,97 @@ class CSRApp:
         num_factors = X_context_for_opt.shape[1]
         max_active = int(max_active_factors)
         
-        # First, find solution without cardinality constraint
+        # NEW APPROACH: Use L1 regularization to encourage sparsity, then select top factors
         try:
-            res_initial = minimize(objective_to_minimize, x0_for_opt, bounds=bounds_for_opt, 
+            # First optimization with L1-like constraint to encourage sparsity
+            def sparsity_objective(x):
+                main_obj = objective_to_minimize(x)
+                # Add small L1 penalty to encourage zeros
+                l1_penalty = 1e-6 * np.sum(np.abs(x))
+                return main_obj + l1_penalty
+            
+            res_sparse = minimize(sparsity_objective, x0_for_opt, bounds=bounds_for_opt, 
                                 method='L-BFGS-B', options={'disp': False})
             
-            if res_initial.success:
-                x_initial = res_initial.x
+            if res_sparse.success:
+                x_sparse = res_sparse.x
                 
-                # Identify which factors are most important (largest deviation from center)
-                factor_importance = []
-                for i in range(num_factors):
-                    midpoint = (bounds_for_opt[i][0] + bounds_for_opt[i][1]) / 2
-                    importance = abs(x_initial[i] - midpoint) / (bounds_for_opt[i][1] - bounds_for_opt[i][0])
-                    factor_importance.append(importance)
+                # Find the factors with largest absolute values (most important)
+                abs_values = np.abs(x_sparse)
                 
-                # Get indices of the top 'max_active' most important factors
-                top_indices = np.argsort(factor_importance)[-max_active:]
+                # If we want exactly max_active non-zero factors, set others to zero
+                if max_active < num_factors:
+                    # Get indices of top max_active factors
+                    threshold = np.sort(abs_values)[-max_active]
+                    top_indices = np.where(abs_values >= threshold)[0]
+                    
+                    # Now optimize only these factors, allowing others to be zero
+                    def constrained_objective(x_active):
+                        x_full = np.zeros(num_factors)
+                        x_full[top_indices] = x_active
+                        return objective_to_minimize(x_full)
+                    
+                    active_bounds = [bounds_for_opt[i] for i in top_indices]
+                    active_x0 = x_sparse[top_indices]
+                    
+                    # Add CSR constraints for active factors
+                    active_constraints = []
+                    for limit_name, limit_data in self.csr_limits.items():
+                        factors = limit_data.get('factors', [])
+                        limit_value = limit_data.get('value', 0)
+                        limit_type = limit_data.get('type', 'sum')
+                        
+                        active_factors_in_limit = [f for f in factors if f in top_indices]
+                        if not active_factors_in_limit:
+                            continue
+                        
+                        if limit_type == 'sum':
+                            def make_active_sum_constraint(factors_list, limit_val, norm_min, norm_max, norm_type, top_indices_list):
+                                def constraint_func(x_active):
+                                    x_full = np.zeros(num_factors)
+                                    x_full[top_indices_list] = x_active
+                                    
+                                    # Convert to original scale for constraint
+                                    if norm_type == "[-1, 1]":
+                                        x_orig = (x_full + 1) / 2 * (norm_max - norm_min) + norm_min
+                                    elif norm_type == "[0, 1]":
+                                        x_orig = x_full * (norm_max - norm_min) + norm_min
+                                    else:
+                                        x_orig = x_full
+                                    
+                                    total = sum(x_orig[i] for i in factors_list)
+                                    return limit_val - total
+                                return constraint_func
+                            
+                            constraint = {'type': 'ineq', 
+                                        'fun': make_active_sum_constraint(factors, limit_value, 
+                                                                        self.norm_x_min, self.norm_x_max, 
+                                                                        self.norm_select.get(), top_indices)}
+                            active_constraints.append(constraint)
+                    
+                    # Optimize the active factors
+                    if active_constraints:
+                        res_final = minimize(constrained_objective, active_x0, bounds=active_bounds,
+                                        method='SLSQP', constraints=active_constraints, options={'disp': False})
+                    else:
+                        res_final = minimize(constrained_objective, active_x0, bounds=active_bounds,
+                                        method='L-BFGS-B', options={'disp': False})
+                    
+                    if res_final.success:
+                        x_final = np.zeros(num_factors)
+                        x_final[top_indices] = res_final.x
+                    else:
+                        # Fallback: use the sparse solution
+                        x_final = x_sparse
+                else:
+                    # Use all factors
+                    x_final = x_sparse
                 
-                # Create a solution with only the top factors active
-                x_final = np.zeros(num_factors)
-                for idx in top_indices:
-                    x_final[idx] = x_initial[idx]
-                
-                # Calculate the value
+                # Calculate final value
                 value = csr_func_for_optimizer(x_final)
+                
+                # Count actually active factors (above threshold)
+                active_count = np.sum(np.abs(x_final) > 1e-6)
                 
                 # Convert to original scale
                 if self.norm_select.get() == "[-1, 1]":
@@ -2302,12 +2592,12 @@ class CSRApp:
                     'x': res_orig, 
                     'value': value,
                     'x_normalized': x_final,
-                    'active_factors_count': max_active,
-                    'active_factor_indices': top_indices.tolist()
+                    'active_factors_count': active_count,
+                    'active_factor_indices': list(top_indices) if max_active < num_factors else list(range(num_factors))
                 }
         
         except Exception as e:
-            print(f"Heuristic optimization failed: {str(e)}")
+            print(f"Improved heuristic optimization failed: {str(e)}")
         
         return None
 
@@ -2364,13 +2654,34 @@ class CSRApp:
                             x_orig = x_norm
                         
                         total = sum(x_orig[i] for i in factors_list)
-                        return limit_val - total
+                        return limit_val - total  # total <= limit_val
                     return constraint_func
                 
                 constraint = {'type': 'ineq', 
                             'fun': make_sum_constraint(factors, limit_value, 
                                                     self.norm_x_min, self.norm_x_max, 
                                                     self.norm_select.get())}
+                constraints.append(constraint)
+                
+            elif limit_type == 'sum_equality':  # NEW: Equality constraint
+                def make_sum_equality_constraint(factors_list, limit_val, norm_min, norm_max, norm_type):
+                    def constraint_func(x_norm):
+                        # Convert normalized values back to original scale for constraint
+                        if norm_type == "[-1, 1]":
+                            x_orig = (x_norm + 1) / 2 * (norm_max - norm_min) + norm_min
+                        elif norm_type == "[0, 1]":
+                            x_orig = x_norm * (norm_max - norm_min) + norm_min
+                        else:
+                            x_orig = x_norm
+                        
+                        total = sum(x_orig[i] for i in factors_list)
+                        return total - limit_val  # total - limit_val = 0 => total = limit_val
+                    return constraint_func
+                
+                constraint = {'type': 'eq',  # CHANGE: Use equality constraint type
+                            'fun': make_sum_equality_constraint(factors, limit_value, 
+                                                            self.norm_x_min, self.norm_x_max, 
+                                                            self.norm_select.get())}
                 constraints.append(constraint)
                 
             elif limit_type == 'product':
@@ -2488,11 +2799,23 @@ class CSRApp:
                     def constraint_func(x_orig):
                         # Note: For comprehensive optimization, we're already in original scale
                         total = sum(x_orig[i] for i in factors_list)
-                        return limit_val - total
+                        return limit_val - total  # total <= limit_val
                     return constraint_func
                 
                 constraint = {'type': 'ineq', 
                             'fun': make_sum_constraint(factors, limit_value)}
+                constraints.append(constraint)
+                
+            elif limit_type == 'sum_equality':  # NEW: Equality constraint
+                def make_sum_equality_constraint(factors_list, limit_val):
+                    def constraint_func(x_orig):
+                        # Note: For comprehensive optimization, we're already in original scale
+                        total = sum(x_orig[i] for i in factors_list)
+                        return total - limit_val  # total - limit_val = 0 => total = limit_val
+                    return constraint_func
+                
+                constraint = {'type': 'eq',  # CHANGE: Use equality constraint type
+                            'fun': make_sum_equality_constraint(factors, limit_value)}
                 constraints.append(constraint)
                 
             elif limit_type == 'product':

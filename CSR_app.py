@@ -1,4 +1,5 @@
 import os
+import sys
 import pandas as pd
 import numpy as np
 from scipy.optimize import minimize
@@ -13,6 +14,19 @@ import matplotlib.colors as mcolors
 import matplotlib.patches # For Wedge
 from PIL import Image, ImageDraw, ImageFont
 import math
+
+class _SilentStream:
+    def write(self, _msg=None):
+        pass
+
+    def flush(self):
+        pass
+
+
+if sys.stdout is None:
+    sys.stdout = _SilentStream()
+if sys.stderr is None:
+    sys.stderr = _SilentStream()
 
 from OACD import OACD
 

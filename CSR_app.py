@@ -847,6 +847,8 @@ class CSRApp:
                     if col in current_states:
                         var.set(current_states[col])
             
+            self.update_3d_plot()
+
         except Exception as e:
             messagebox.showerror("Error", f"Fitting failed: {str(e)}")
             self.coefficients = None
@@ -1197,12 +1199,18 @@ class CSRApp:
             self.plot_results(n_factors, 0, min(1, n_factors -1) if n_factors > 1 else 0)
             self.update_coefficient_pie_charts()
 
+            self.update_3d_plot()
+
         except Exception as e:
             raise Exception(f"Single result fitting failed: {str(e)}")
         
     def _run_comprehensive_fitting(self):
         """Handle fitting for multiple result columns (comprehensive optimization)"""
         try:
+            print(f"DEBUG: Data ranges for each outcome:")
+            for result_col in self.result_cols:
+                data_range = self.df[result_col].max() - self.df[result_col].min()
+                print(f"DEBUG: {result_col}: min={self.df[result_col].min():.2f}, max={self.df[result_col].max():.2f}, range={data_range:.2f}")
             print(f"DEBUG: Running comprehensive fitting with {len(self.result_cols)} outcomes")
             print(f"DEBUG: Outcome columns: {self.result_cols}")
             
@@ -1337,8 +1345,7 @@ class CSRApp:
             
             # Create comprehensive function - IMPROVED NORMALIZATION
             def comprehensive_func(x):
-                total = 0
-                valid_outcomes = 0
+                scores = []
                 
                 for result_col, func_data in self.result_functions.items():
                     # Evaluate individual CSR function
@@ -1350,110 +1357,73 @@ class CSRApp:
                         x_norm = x
                         
                     design_row = self.create_design_matrix(x_norm.reshape(1, -1), func_data['bits_array'])
-                    val = np.dot(design_row[0], func_data['coefficients'])
+                    raw_val = np.dot(design_row[0], func_data['coefficients'])
                     
-                    # FIX: Use CSR function extremum value for normalization
-                    extremum_value = func_data.get('extremum_val', 0)
+                    # BOUND the predictions to reasonable ranges
+                    data_min, data_max = func_data['min_val'], func_data['max_val']
+                    bounded_val = np.clip(raw_val, data_min, data_max)
                     
-                    if abs(extremum_value) > 1e-9:
-                        # Normalize by how close we are to the extremum
-                        # For maximum: val/extremum_value (closer to 1 is better)
-                        # For minimum: extremum_value/val (closer to 1 is better)
-                        # For absolute values: |val|/extremum_value (closer to 1 is better)
-                        
-                        if self.weight_combo.get() == "Maximum":
-                            normalized_val = val / extremum_value
-                        elif self.weight_combo.get() == "Minimum":
-                            normalized_val = extremum_value / val if abs(val) > 1e-9 else 0.0
-                        elif "absolute value" in self.weight_combo.get().lower():
-                            normalized_val = abs(val) / abs(extremum_value)
-                        else:
-                            normalized_val = val / extremum_value  # Default to maximum behavior
+                    # Normalize to [0,1] using ACTUAL data range
+                    data_range = data_max - data_min
+                    if data_range > 1e-9:
+                        normalized_val = (bounded_val - data_min) / data_range
                     else:
-                        normalized_val = 0.0
-                    
-                    # Apply polarity and ensure values are reasonable
+                        normalized_val = 0.5  # Middle value if no range
+                        
+                    # Apply polarity and objective
                     polarity = func_data.get('polarity', 1)
                     
-                    # Handle edge cases and ensure normalized_val is in reasonable range
-                    if np.isnan(normalized_val) or np.isinf(normalized_val):
-                        normalized_val = 0.0
-                    elif abs(normalized_val) > 10:  # Cap extreme values
-                        normalized_val = 10.0 if normalized_val > 0 else -10.0
-                    
-                    total += polarity * normalized_val
-                    valid_outcomes += 1
-                    
-                # Return average
-                if valid_outcomes > 0:
-                    return total / valid_outcomes
-                else:
-                    return 0.0
+                    if self.weight_combo.get() == "Maximum":
+                        contribution = polarity * normalized_val
+                    elif self.weight_combo.get() == "Minimum":
+                        contribution = polarity * (1 - normalized_val)
+                    else:
+                        # Handle absolute value objectives
+                        contribution = polarity * normalized_val
+                        
+                    scores.append(contribution)
                 
+                # Return average score
+                return np.mean(scores) if scores else 0.0
+                    
             self.comprehensive_function = comprehensive_func
             
-            # Set bounds in original scale regardless of normalization
+            # FIXED: Set bounds and run optimization
             bounds_opt = [(self.df[col].min(), self.df[col].max()) for col in self.factor_cols]
             x0_opt = np.array([(min_val + max_val)/2 for min_val, max_val in bounds_opt])
 
-            extremum_type_str = self.weight_combo.get().lower().replace(" ", "_")
-
-            # Find extremum of comprehensive function - run for all active factor counts
-            n_factors = len(self.factor_cols)
-            all_extremum_results = []
-
-            # Run optimization for each possible number of active factors (1 to N)
-            for k in range(1, n_factors + 1):
-                print(f"DEBUG: Running comprehensive optimization for {k} active factors")
-                extremum_result = self.find_extremum_comprehensive_with_active_factors(
-                    bounds_opt, x0_opt, extremum_type_str, str(k))
+            extremum_type_str = 'maximum'  # Always maximize the comprehensive score
+            
+            # Find extremum - FIXED: Store result properly
+            print("DEBUG: Finding comprehensive extremum...")
+            extremum_result = self.find_extremum_comprehensive(bounds_opt, x0_opt, extremum_type_str)
+            
+            if extremum_result and 'x' in extremum_result and extremum_result['x'] is not None:
+                self.extremum_point = extremum_result
+                print(f"DEBUG: Comprehensive extremum found at: {self.extremum_point['x']}")
+                print(f"DEBUG: Comprehensive extremum value: {self.extremum_point['value']}")
                 
-                if extremum_result and 'x' in extremum_result and extremum_result['x'] is not None:
-                    # Verify the result has the expected number of active factors
-                    active_count = extremum_result.get('active_factors_count', 0)
-                    if active_count == k:
-                        all_extremum_results.append({
-                            'active_factors': k,
-                            'result': extremum_result
-                        })
-                        print(f"DEBUG: Successfully added result for {k} active factors")
-                    else:
-                        print(f"DEBUG: Skipping result for k={k}: expected {k} factors but got {active_count}")
-
-            # Store all results and filter based on user preference
-            if self.show_all_combinations_var.get():
-                # Store all results
-                self.all_extremum_results = all_extremum_results
-                print(f"Storing all {len(self.all_extremum_results)} factor combinations")
+                # FIXED: Create all_extremum_results for consistent display
+                n_factors = len(self.factor_cols)
+                self.all_extremum_results = [{
+                    'active_factors': n_factors,
+                    'result': self.extremum_point
+                }]
+                
+                # Verify the extremum
+                test_value = self.comprehensive_function(self.extremum_point['x'])
+                print(f"DEBUG: Verified extremum value: {test_value:.4f}")
             else:
-                # Only store the result with all factors active
-                full_result = next((r for r in all_extremum_results if r['active_factors'] == n_factors), None)
-                if full_result:
-                    self.all_extremum_results = [full_result]
-                    print("Storing only full factor combination for comprehensive optimization")
-                else:
-                    # Fallback to highest available
-                    if all_extremum_results:
-                        highest_result = max(all_extremum_results, key=lambda x: x['active_factors'])
-                        self.all_extremum_results = [highest_result]
-                        print(f"Storing highest available: {highest_result['active_factors']} factors")
-                    else:
-                        self.all_extremum_results = []
-                        print("No valid comprehensive optimization results found")
+                print("DEBUG: No valid extremum found for comprehensive optimization")
+                self.extremum_point = None
+                self.all_extremum_results = []
 
-            # Use the result with all factors active as the main display
-            if all_extremum_results:
-                # Find the result with all factors active (should be the last one)
-                full_result = next((r for r in all_extremum_results if r['active_factors'] == n_factors), 
-                                all_extremum_results[-1])
-                self.extremum_point = full_result['result']
-            else:
-                # Fallback to regular optimization if no cardinality-constrained results
-                print("DEBUG: Falling back to regular comprehensive optimization")
-                self.extremum_point = self.find_extremum_comprehensive(bounds_opt, x0_opt, extremum_type_str)
-
-            # Update displays
+            # Update displays - FIXED: Call the proper display methods
             self.update_comprehensive_results_display(result_min_max)
+            
+            # Generate and display equations
+            equation_str, function_defs_str, factor_defs_str = self._generate_comprehensive_equation_and_definitions()
+            self.update_comprehensive_equation_display(equation_str, function_defs_str, factor_defs_str)
             
             # Set up factor combos for plotting
             display_factor_names = [self.col_name_mapping.get(f, f) for f in self.factor_cols]
@@ -1463,17 +1433,72 @@ class CSRApp:
                 self.x_factor_combo.current(0)
                 self.y_factor_combo.current(min(1, len(display_factor_names)-1))
             
-            # Update the table view with the new data
-            self.update_table_view()
-            
-            self.plot_results(n_factors)
+            self.update_3d_plot()
 
         except Exception as e:
             import traceback
             print(f"DEBUG: Comprehensive fitting error: {str(e)}")
             print(f"DEBUG: Traceback: {traceback.format_exc()}")
             raise Exception(f"Comprehensive fitting failed: {str(e)}")
+        
+    def _generate_comprehensive_equation_and_definitions(self):
+        """Generate equation display for comprehensive optimization"""
+        if not hasattr(self, 'result_functions'):
+            return "Comprehensive model (multiple outcomes)", "", ""
+        
+        # Generate equation strings for each outcome
+        equation_parts = ["Comprehensive Optimization Model", "=" * 30, ""]
+        
+        for result_col, func_data in self.result_functions.items():
+            n_factors = len(self.factor_cols)
+            eq_str = self._generate_single_result_equation(
+                func_data['coefficients'], 
+                func_data['bits_array'], 
+                n_factors
+            )
+            
+            display_name = self.col_name_mapping.get(result_col, result_col)
+            polarity_symbol = "(+)" if func_data.get('polarity', 1) == 1 else "(-)"
+            equation_parts.append(f"{display_name} {polarity_symbol}:")
+            equation_parts.append(f"  {eq_str}")
+            equation_parts.append("")  # Empty line for spacing
+        
+        # Generate factor definitions
+        factor_definitions = []
+        if hasattr(self, 'factor_cols') and self.factor_cols:
+            for i, factor in enumerate(self.factor_cols):
+                short_name = f"c{i+1}"
+                original_name = self.col_name_mapping.get(factor, f"Factor {i+1}")
+                factor_definitions.append(f"{short_name} = {original_name}")
+        
+        equation_str = "\n".join(equation_parts)
+        function_defs_str = "Multiple outcome functions combined into comprehensive score"
+        factor_defs_str = "\n".join(factor_definitions) if factor_definitions else "No factor definitions available"
+        
+        return equation_str, function_defs_str, factor_defs_str
 
+    def update_comprehensive_equation_display(self, equation_str, function_defs_str, factor_defs_str):
+        """Update the equation and definitions display for comprehensive optimization"""
+        # Update Equation Text
+        if hasattr(self, 'equation_text'):
+            try:
+                self.equation_text.config(state='normal')
+                self.equation_text.delete(1.0, tk.END)
+                self.equation_text.insert(tk.END, equation_str)
+                self.equation_text.config(state='disabled')
+            except tk.TclError as e:
+                print(f"Error updating equation text: {e}")
+
+        # Update Factor Definitions Text
+        if hasattr(self, 'factor_definitions_text'):
+            try:
+                self.factor_definitions_text.config(state='normal')
+                self.factor_definitions_text.delete(1.0, tk.END)
+                self.factor_definitions_text.insert(tk.END, factor_defs_str)
+                self.factor_definitions_text.config(state='disabled')
+            except tk.TclError as e:
+                print(f"Error updating parameter definitions: {e}")
+            
     def _find_individual_extremum(self, coefficients, bits_array, bounds, x0, extremum_type, X_context=None):
         """Find extremum for an individual outcome function with better error handling"""
         if coefficients is None or bits_array is None:
@@ -1769,7 +1794,7 @@ class CSRApp:
                             
                             if result and 'x' in result and result['x'] is not None:
                                 # First line: Number of Factors
-                                self.factors_text.insert(tk.END, f"Number of Factors: {k}\n")
+                                self.factors_text.insert(tk.END, f"Number of Parameters: {k}\n")
                                 
                                 # Second line: Extremum point with ALL factors (no filtering)
                                 all_factors = []
@@ -1798,7 +1823,7 @@ class CSRApp:
                         result = result_info['result']
                         
                         # First line: Number of Factors
-                        self.factors_text.insert(tk.END, f"Number of Factors: {k}\n")
+                        self.factors_text.insert(tk.END, f"Number of Parameters: {k}\n")
                         
                         # Second line: Extremum point with ALL factors
                         all_factors = []
@@ -1825,7 +1850,7 @@ class CSRApp:
                     if extremum_x is not None:
                         # First line: Number of Factors - just show total count
                         total_factors = len(extremum_x)
-                        self.factors_text.insert(tk.END, f"Number of Factors: {total_factors}\n")
+                        self.factors_text.insert(tk.END, f"Number of Parameters: {total_factors}\n")
                         
                         # Second line: Extremum point with ALL factors
                         all_factors = []
@@ -1917,122 +1942,62 @@ class CSRApp:
 
     def update_comprehensive_results_display(self, result_min_max):
         """Update the display for comprehensive fitting results"""
-        # Update extremum display - show all results in the same format
+        # Update extremum display
         if hasattr(self, 'factors_text'):
             self.factors_text.config(state='normal')
             self.factors_text.delete(1.0, tk.END)
 
-            if hasattr(self, 'all_extremum_results') and self.all_extremum_results:
-                if len(self.all_extremum_results) > 1:
-                    # Show all results with separators
-                    sorted_results = sorted(self.all_extremum_results, 
-                                        key=lambda x: x['active_factors'], reverse=True)
-                    
-                    for result_info in sorted_results:
-                        k = result_info['active_factors']
-                        result = result_info['result']
+            # FIXED: Properly display extremum for comprehensive optimization
+            if hasattr(self, 'extremum_point') and self.extremum_point and 'x' in self.extremum_point:
+                extremum_x = self.extremum_point['x']
+                extremum_value = self.extremum_point['value']
+                
+                # Display basic extremum info
+                self.factors_text.insert(tk.END, f"Number of Parameters: {len(self.factor_cols)}\n")
+                
+                # Display extremum point coordinates
+                active_factors = []
+                for i, val in enumerate(extremum_x):
+                    factor_name = self.col_name_mapping.get(
+                        self.factor_cols[i] if i < len(self.factor_cols) else f"Factor {i+1}",
+                        f"c{i+1}"
+                    )
+                    active_factors.append(f"{factor_name}: {val:.4f}")
+                
+                self.factors_text.insert(tk.END, f"Optimal point: {', '.join(active_factors)}\n")
+                self.factors_text.insert(tk.END, f"Comprehensive score: {extremum_value:.4f}\n\n")
+                
+                # Display individual outcome values at extremum
+                if hasattr(self, 'result_functions'):
+                    self.factors_text.insert(tk.END, "Individual outcomes at optimal point:\n")
+                    outcome_values = []
+                    for result_col, func_data in self.result_functions.items():
+                        # Calculate value for this outcome at extremum
+                        x_point = extremum_x
                         
-                        if result and 'x' in result and result['x'] is not None:
-                            # First line: Number of Factors
-                            self.factors_text.insert(tk.END, f"Number of Factors: {k}\n")
-                            
-                            # Second line: Extremum point with selected factors
-                            active_factors = []
-                            for i, val in enumerate(result['x']):
-                                if abs(val) > 1e-6:
-                                    factor_name = self.col_name_mapping.get(
-                                        self.factor_cols[i] if i < len(self.factor_cols) else f"Factor {i+1}",
-                                        f"c{i+1}"
-                                    )
-                                    active_factors.append(f"{factor_name}: {val:.4f}")
-                            
-                            self.factors_text.insert(tk.END, f"Extremum point: {', '.join(active_factors)}\n")
-                            
-                            # Third line: Individual outcome values at extremum
-                            if hasattr(self, 'result_functions'):
-                                outcome_values = []
-                                for result_col, func_data in self.result_functions.items():
-                                    # Calculate value for this outcome at extremum
-                                    x_point = result['x']
-                                    
-                                    # Normalize for each function
-                                    if func_data['norm_type'] == "[-1, 1]":
-                                        x_norm = 2 * (x_point - func_data['x_min']) / (func_data['x_max'] - func_data['x_min']) - 1
-                                    elif func_data['norm_type'] == "[0, 1]":
-                                        x_norm = (x_point - func_data['x_min']) / (func_data['x_max'] - func_data['x_min'])
-                                    else:
-                                        x_norm = x_point
-                                    
-                                    design_row = self.create_design_matrix(x_norm.reshape(1, -1), func_data['bits_array'])
-                                    val = np.dot(design_row[0], func_data['coefficients'])
-                                    
-                                    display_name = self.col_name_mapping.get(result_col, result_col)
-                                    polarity_symbol = "(+)" if func_data.get('polarity', 1) == 1 else "(-)"
-                                    outcome_values.append(f"{display_name}{polarity_symbol}: {val:.4f}")
-                                
-                                self.factors_text.insert(tk.END, f"Individual outcomes: {', '.join(outcome_values)}\n")
-                            
-                            # FIX: Only show comprehensive value if it's meaningful
-                            comp_value = result['value']
-                            if abs(comp_value) > 0.001:  # Only show if meaningful
-                                self.factors_text.insert(tk.END, f"Comprehensive score: {comp_value:.4f}\n")
-                            
-                            # Blank line between results
-                            self.factors_text.insert(tk.END, "\n")
-                else:
-                    # Show only one result
-                    result_info = self.all_extremum_results[0]
-                    k = result_info['active_factors']
-                    result = result_info['result']
-                    
-                    # Same format as above but for single result
-                    self.factors_text.insert(tk.END, f"Number of Factors: {k}\n")
-                    
-                    active_factors = []
-                    for i, val in enumerate(result['x']):
-                        if abs(val) > 1e-6:
-                            factor_name = self.col_name_mapping.get(
-                                self.factor_cols[i] if i < len(self.factor_cols) else f"Factor {i+1}",
-                                f"c{i+1}"
-                            )
-                            active_factors.append(f"{factor_name}: {val:.4f}")
-                    
-                    self.factors_text.insert(tk.END, f"Extremum point: {', '.join(active_factors)}\n")
-                    
-                    if hasattr(self, 'result_functions'):
-                        outcome_values = []
-                        for result_col, func_data in self.result_functions.items():
-                            x_point = result['x']
-                            if func_data['norm_type'] == "[-1, 1]":
-                                x_norm = 2 * (x_point - func_data['x_min']) / (func_data['x_max'] - func_data['x_min']) - 1
-                            elif func_data['norm_type'] == "[0, 1]":
-                                x_norm = (x_point - func_data['x_min']) / (func_data['x_max'] - func_data['x_min'])
-                            else:
-                                x_norm = x_point
-                            
-                            design_row = self.create_design_matrix(x_norm.reshape(1, -1), func_data['bits_array'])
-                            val = np.dot(design_row[0], func_data['coefficients'])
-                            
-                            display_name = self.col_name_mapping.get(result_col, result_col)
-                            polarity_symbol = "(+)" if func_data.get('polarity', 1) == 1 else "(-)"
-                            outcome_values.append(f"{display_name}{polarity_symbol}: {val:.4f}")
+                        # Normalize for each function
+                        if func_data['norm_type'] == "[-1, 1]":
+                            x_norm = 2 * (x_point - func_data['x_min']) / (func_data['x_max'] - func_data['x_min']) - 1
+                        elif func_data['norm_type'] == "[0, 1]":
+                            x_norm = (x_point - func_data['x_min']) / (func_data['x_max'] - func_data['x_min'])
+                        else:
+                            x_norm = x_point
                         
-                        self.factors_text.insert(tk.END, f"Individual outcomes: {', '.join(outcome_values)}\n")
+                        design_row = self.create_design_matrix(x_norm.reshape(1, -1), func_data['bits_array'])
+                        val = np.dot(design_row[0], func_data['coefficients'])
+                        
+                        display_name = self.col_name_mapping.get(result_col, result_col)
+                        polarity_symbol = "(+)" if func_data.get('polarity', 1) == 1 else "(-)"
+                        outcome_values.append(f"{display_name}{polarity_symbol}: {val:.4f}")
                     
-                    # FIX: Only show comprehensive value if meaningful
-                    comp_value = result['value']
-                    if abs(comp_value) > 0.001:
-                        self.factors_text.insert(tk.END, f"Comprehensive score: {comp_value:.4f}\n")
+                    for outcome in outcome_values:
+                        self.factors_text.insert(tk.END, f"  {outcome}\n")
+            else:
+                self.factors_text.insert(tk.END, "No extremum found for comprehensive optimization\n")
 
             self.factors_text.config(state='disabled')
 
-        # Clear the separate value text widget since we're showing everything in factors_text
-        if hasattr(self, 'value_text'):
-            self.value_text.config(state='normal')
-            self.value_text.delete(1.0, tk.END)
-            self.value_text.config(state='disabled')
-
-        # KEEP R² and RMSE display - this section should remain
+        # FIXED: Update R² display for comprehensive optimization
         if hasattr(self, 'result_functions'):
             # Clear R² frame first
             if hasattr(self, 'r2_frame'):
@@ -2044,7 +2009,7 @@ class CSRApp:
                 for result_col, func_data in self.result_functions.items():
                     display_name = self.col_name_mapping.get(result_col, result_col)
                     r2 = func_data['model'].score(func_data['X_design'], func_data['y'])
-                    rmse = func_data['rmse']  # Get the stored RMSE
+                    rmse = func_data['rmse']
                     
                     r2_frame = ttk.Frame(self.r2_frame)
                     r2_frame.grid(row=r2_row_num, column=0, sticky='ew', pady=(0,5))
@@ -2090,32 +2055,33 @@ class CSRApp:
                     r2_row_num += 1
 
                 # Calculate and display average R² and RMSE
-                avg_r2 = np.mean([func['model'].score(func['X_design'], func['y']) for func in self.result_functions.values()])
-                avg_rmse = np.mean([func['rmse'] for func in self.result_functions.values()])
+                if self.result_functions:
+                    avg_r2 = np.mean([func['model'].score(func['X_design'], func['y']) for func in self.result_functions.values()])
+                    avg_rmse = np.mean([func['rmse'] for func in self.result_functions.values()])
 
-                avg_frame = ttk.Frame(self.r2_frame)
-                avg_frame.grid(row=r2_row_num, column=0, sticky='ew', pady=(10,0))
+                    avg_frame = ttk.Frame(self.r2_frame)
+                    avg_frame.grid(row=r2_row_num, column=0, sticky='ew', pady=(10,0))
 
-                ttk.Label(avg_frame, text="Average R²:", font=(self.label_font.cget("family"), 
-                        self.label_font.cget("size"), "bold")).grid(row=0, column=0, sticky='w')
+                    ttk.Label(avg_frame, text="Average R²:", font=(self.label_font.cget("family"), 
+                            self.label_font.cget("size"), "bold")).grid(row=0, column=0, sticky='w')
 
-                avg_r2_text = tk.Text(avg_frame, height=1, width=12, wrap=tk.NONE, state='disabled',
-                                    font=self.text_widget_font, relief=tk.SOLID, borderwidth=1, padx=5)
-                avg_r2_text.grid(row=0, column=1, padx=(5,15), sticky='w')
-                avg_r2_text.config(state='normal')
-                avg_r2_text.insert(tk.END, f"{avg_r2:.4f}")
-                avg_r2_text.config(state='disabled')
+                    avg_r2_text = tk.Text(avg_frame, height=1, width=12, wrap=tk.NONE, state='disabled',
+                                        font=self.text_widget_font, relief=tk.SOLID, borderwidth=1, padx=5)
+                    avg_r2_text.grid(row=0, column=1, padx=(5,15), sticky='w')
+                    avg_r2_text.config(state='normal')
+                    avg_r2_text.insert(tk.END, f"{avg_r2:.4f}")
+                    avg_r2_text.config(state='disabled')
 
-                # Average RMSE display
-                ttk.Label(avg_frame, text="Average RMSE:", font=(self.label_font.cget("family"), 
-                        self.label_font.cget("size"), "bold")).grid(row=0, column=2, sticky='w', padx=(10,0))
+                    # Average RMSE display
+                    ttk.Label(avg_frame, text="Average RMSE:", font=(self.label_font.cget("family"), 
+                            self.label_font.cget("size"), "bold")).grid(row=0, column=2, sticky='w', padx=(10,0))
 
-                avg_rmse_text = tk.Text(avg_frame, height=1, width=12, wrap=tk.NONE, state='disabled',
-                                    font=self.text_widget_font, relief=tk.SOLID, borderwidth=1, padx=5)
-                avg_rmse_text.grid(row=0, column=3, padx=(5,0), sticky='w')
-                avg_rmse_text.config(state='normal')
-                avg_rmse_text.insert(tk.END, f"{avg_rmse:.4f}")
-                avg_rmse_text.config(state='disabled')
+                    avg_rmse_text = tk.Text(avg_frame, height=1, width=12, wrap=tk.NONE, state='disabled',
+                                        font=self.text_widget_font, relief=tk.SOLID, borderwidth=1, padx=5)
+                    avg_rmse_text.grid(row=0, column=3, padx=(5,0), sticky='w')
+                    avg_rmse_text.config(state='normal')
+                    avg_rmse_text.insert(tk.END, f"{avg_rmse:.4f}")
+                    avg_rmse_text.config(state='disabled')
 
     def _generate_single_result_equation(self, beta, bits_array, n_factors):
         """Helper method to generate equation string for a single result (same as single optimization)"""
@@ -2241,7 +2207,12 @@ class CSRApp:
             fixed_factor_values_original_scale = np.mean(self.X_original_scale, axis=0)
             if (self.extremum_point and self.extremum_point['x'] is not None and 
                 len(self.extremum_point['x']) == n_factors):
-                fixed_factor_values_original_scale = self.extremum_point['x']
+                if hasattr(self, 'comprehensive_function'):
+                    fixed_factor_values_original_scale = self.extremum_point['x']
+                else:
+                    unnorm_temp = self._unnormalize_point(self.extremum_point.get('x_normalized', self.extremum_point['x']))
+                    if unnorm_temp is not None:
+                        fixed_factor_values_original_scale = unnorm_temp
 
             # Evaluate the CSR function across the grid
             for i_grid in range(x1_grid_orig.shape[0]):
@@ -2268,14 +2239,33 @@ class CSRApp:
                                 cmap='viridis', alpha=0.9, edgecolor='#555555', 
                                 linewidth=0.15, antialiased=True)
 
-            # Plot extremum point if available
+            # FIXED: Plot extremum point if available - REPLACE THIS SECTION
             if (self.extremum_point and self.extremum_point['x'] is not None and 
                 len(self.extremum_point['x']) == n_factors):
-                ax2.scatter([self.extremum_point['x'][x_idx]], 
-                        [self.extremum_point['x'][y_idx]], 
-                        [self.extremum_point['value']], 
-                        c='gold', s=200, marker='*', edgecolor='black', 
-                        linewidth=1, label='Extremum', depthshade=True, zorder=10)
+                
+                # FIXED: Handle both comprehensive and single result optimization
+                if hasattr(self, 'comprehensive_function'):
+                    # For comprehensive optimization, we already have original scale coordinates
+                    extremum_x_orig = self.extremum_point['x']
+                    extremum_value = self.extremum_point['value']
+                else:
+                    # For single result, unnormalize if needed
+                    extremum_x_orig = self.extremum_point.get('x', None)
+                    extremum_value = self.extremum_point.get('value', 0)
+                    # If we have normalized coordinates, unnormalize them
+                    if 'x_normalized' in self.extremum_point:
+                        extremum_x_orig = self._unnormalize_point(self.extremum_point['x_normalized'])
+                
+                if extremum_x_orig is not None and len(extremum_x_orig) > 0:
+                    print(f"DEBUG: Plotting extremum at ({extremum_x_orig[x_idx]:.4f}, {extremum_x_orig[y_idx]:.4f}, {extremum_value:.4f})")
+                    ax2.scatter([extremum_x_orig[x_idx]], 
+                            [extremum_x_orig[y_idx]], 
+                            [extremum_value], 
+                            c='gold', s=200, marker='*', edgecolor='black', 
+                            linewidth=1, label='Optimal Point', depthshade=True, zorder=10)
+                    
+                    # Add legend
+                    ax2.legend(fontsize=8, facecolor='#F0F0F0', framealpha=0.8)
 
             # Set axis labels
             x_axis_name = self.col_name_mapping.get(self.factor_cols[x_idx], self.factor_cols[x_idx])
@@ -2286,11 +2276,6 @@ class CSRApp:
             ax2.set_ylabel(f"\n{y_axis_name}", fontsize=9, fontweight='bold', linespacing=2)
             ax2.set_zlabel(f"\n{result_axis_name}", fontsize=9, fontweight='bold', linespacing=2)
             ax2.set_title('CSR Response Surface', fontsize=11, fontweight='bold', y=1.02)
-
-            # Add legend if extremum point is plotted
-            if (self.extremum_point and self.extremum_point['x'] is not None and 
-                len(self.extremum_point['x']) == n_factors):
-                ax2.legend(fontsize=8, facecolor='#F0F0F0', framealpha=0.8)
 
             # Add colorbar
             cbar = self.figure2.colorbar(surf, ax=ax2, shrink=0.6, aspect=12, pad=0.15, format="%.2f")
@@ -3720,7 +3705,7 @@ class CSRApp:
         self.oacd.extrenum_vars = []  # List of (min_var, max_var) for each factor
 
         # --- Controls ---
-        ttk.Label(left_frame, text="Number of Factors:", font=self.label_font).pack(anchor='w', pady=(0,2))
+        ttk.Label(left_frame, text="Number of Parameters:", font=self.label_font).pack(anchor='w', pady=(0,2))
         factor_num_combo = ttk.Combobox(left_frame, state="readonly", font=self.entry_font, width=8)
         factor_num_combo['values'] = list(range(2, 11))
         try:

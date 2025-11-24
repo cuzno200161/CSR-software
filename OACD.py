@@ -1,6 +1,7 @@
+import os
+import sys
 import pandas as pd
 import tkinter as tk
-import oapackage
 import numpy as np
 
 class OACD:
@@ -42,9 +43,39 @@ class OACD:
         elif extrenum == "max":
             self.factor_extrenum.iloc[factor, 1] = value;    
         
+    def _resource_path(self, relative_path):
+        """
+        Resolve resource paths for both development and PyInstaller bundles.
+        """
+        if hasattr(sys, "_MEIPASS"):
+            # PyInstaller onefile
+            base_path = sys._MEIPASS
+        elif getattr(sys, 'frozen', False):
+            # PyInstaller onedir - MacOS .app places resources in Contents/Resources
+            # But the executable runs from Contents/MacOS
+            # Check if we are in a .app bundle
+            exe_dir = os.path.dirname(sys.executable)
+            if "Contents/MacOS" in exe_dir:
+                # Look in ../Resources relative to the executable
+                base_path = os.path.join(os.path.dirname(exe_dir), "Resources")
+            else:
+                # Standard onedir (e.g. Windows/Linux or non-bundle macOS)
+                base_path = exe_dir
+        else:
+            # Development
+            base_path = os.path.dirname(os.path.abspath(__file__))
+
+        return os.path.join(base_path, relative_path)
+
     def excel_to_python(self, filepath):
-        df = pd.read_excel(filepath, header=None)
-        return df    
+        resolved_path = self._resource_path(filepath)
+        print(f"DEBUG: Opening Excel file: {filepath} -> {resolved_path}")
+        try:
+            df = pd.read_excel(resolved_path, header=None)
+            return df
+        except Exception as e:
+            print(f"ERROR: Failed to open {resolved_path}: {e}")
+            raise e    
          
     def build_table(self):
         

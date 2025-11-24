@@ -28,6 +28,7 @@ if sys.stdout is None:
 if sys.stderr is None:
     sys.stderr = _SilentStream()
 
+# Force refresh of OACD module
 from OACD import OACD
 
 class CSRApp:
@@ -3726,7 +3727,7 @@ class CSRApp:
         table_size_combo.bind('<<ComboboxSelected>>', lambda e: self.oacd.set_table_size(table_size_combo.get()))
 
         # --- Interactive Extrenum Table ---
-        extrenum_frame = ttk.LabelFrame(left_frame, text="Factor Min/Max (Extrenum)", padding=(8,6,8,8))
+        extrenum_frame = ttk.LabelFrame(left_frame, text="Parameter Min/Max (Extrenum)", padding=(8,6,8,8))
         extrenum_frame.pack(fill='x', pady=(10,8))
         self.oacd_extrenum_table_frame = ttk.Frame(extrenum_frame, style="App.TFrame")
         self.oacd_extrenum_table_frame.pack(fill='x', expand=True)
@@ -3805,7 +3806,7 @@ class CSRApp:
         self.oacd.extrenum_vars = []
         n = self.oacd.factor_num if getattr(self.oacd, 'factor_num', None) is not None else 2
         # Header
-        ttk.Label(self.oacd_extrenum_table_frame, text="Factor", width=8).grid(row=0, column=0, padx=2, pady=2)
+        ttk.Label(self.oacd_extrenum_table_frame, text="Parameter", width=8).grid(row=0, column=0, padx=2, pady=2)
         ttk.Label(self.oacd_extrenum_table_frame, text="Min", width=8).grid(row=0, column=1, padx=2, pady=2)
         ttk.Label(self.oacd_extrenum_table_frame, text="Max", width=8).grid(row=0, column=2, padx=2, pady=2)
         ttk.Label(self.oacd_extrenum_table_frame, text="Limit", width=8).grid(row=0, column=3, padx=2, pady=2)

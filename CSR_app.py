@@ -1203,7 +1203,89 @@ class CSRApp:
 
         except Exception as e:
             raise Exception(f"Single result fitting failed: {str(e)}")
+
+    def _debug_comprehensive_equations(self):
+        """Debug method to print comprehensive CSR equation information"""
+        if not hasattr(self, 'result_functions'):
+            print("DEBUG: No result_functions available")
+            return
         
+        print("\n" + "="*60)
+        print("COMPREHENSIVE CSR EQUATION DEBUG INFO")
+        print("="*60)
+        
+        for result_col, func_data in self.result_functions.items():
+            print(f"\n--- Outcome: {result_col} ---")
+            print(f"Original data range: {func_data['min_val']:.2f} to {func_data['max_val']:.2f}")
+            print(f"Normalization type: {func_data['norm_type']}")
+            print(f"Polarity: {func_data.get('polarity', 1)}")
+            print(f"R²: {func_data['model'].score(func_data['X_design'], func_data['y']):.4f}")
+            print(f"RMSE: {func_data['rmse']:.4f}")
+            
+            # Print the actual CSR equation
+            n_factors = len(self.factor_cols)
+            equation_str = self._generate_single_result_equation(
+                func_data['coefficients'], 
+                func_data['bits_array'], 
+                n_factors
+            )
+            print(f"CSR Equation: {equation_str}")
+            
+            # Print coefficient magnitudes
+            print("Coefficient magnitudes:")
+            for i, (coef, bits) in enumerate(zip(func_data['coefficients'], func_data['bits_array'])):
+                if abs(coef) > 1e-6:  # Only show significant coefficients
+                    term_type = self._classify_term(bits)
+                    term_desc = self._format_term_debug(bits, n_factors)
+                    print(f"  {term_desc}: {coef:.6f} ({term_type})")
+        
+        print("\n--- Comprehensive Function Test Points ---")
+        # Test the comprehensive function at some key points
+        test_points = [
+            ("Data Minimum", self.X_original_scale.min(axis=0)),
+            ("Data Maximum", self.X_original_scale.max(axis=0)), 
+            ("Data Mean", self.X_original_scale.mean(axis=0)),
+            ("Extremum Point", self.extremum_point['x'] if self.extremum_point else None)
+        ]
+        
+        for name, point in test_points:
+            if point is not None:
+                comp_value = self.comprehensive_function(point)
+                print(f"{name}: {point} -> {comp_value:.6f}")
+                
+                # Also show individual outcomes at this point
+                for result_col, func_data in self.result_functions.items():
+                    if func_data['norm_type'] == "[-1, 1]":
+                        x_norm = 2 * (point - func_data['x_min']) / (func_data['x_max'] - func_data['x_min']) - 1
+                    elif func_data['norm_type'] == "[0, 1]":
+                        x_norm = (point - func_data['x_min']) / (func_data['x_max'] - func_data['x_min'])
+                    else:
+                        x_norm = point
+                        
+                    design_row = self.create_design_matrix(x_norm.reshape(1, -1), func_data['bits_array'])
+                    raw_val = np.dot(design_row[0], func_data['coefficients'])
+                    print(f"  {result_col}: {raw_val:.2f} (normalized: {(raw_val - func_data['min_val']) / (func_data['max_val'] - func_data['min_val']):.3f})")
+
+    def _format_term_debug(self, bits, n_factors):
+        """Format term for debugging purposes"""
+        if sum(bits) == 0:
+            return "Constant"
+        
+        parts = []
+        for j in range(n_factors):
+            if bits[j] == 1:
+                parts.append(f"c{j+1}")
+            elif bits[j] == 2:
+                parts.append(f"c{j+1}²")
+        
+        if len(parts) == 2 and sum(bits) == 2 and 2 not in bits:
+            parts.sort(key=lambda x: int(x.replace('c', '').replace('²', '')))
+            return f"{parts[0]}×{parts[1]}"
+        elif len(parts) == 1:
+            return parts[0]
+        else:
+            return " × ".join(parts)
+
     def _run_comprehensive_fitting(self):
         """Handle fitting for multiple result columns (comprehensive optimization)"""
         try:
@@ -1271,7 +1353,7 @@ class CSRApp:
                 X_design = self.create_design_matrix(X_fit, bits_array)
                 
                 # Fit model
-                alpha_val = 1e-5
+                alpha_val = 0.01
                 model = Ridge(alpha=alpha_val, fit_intercept=False)
                 model.fit(X_design, y_fit)
 
@@ -1345,10 +1427,11 @@ class CSRApp:
             
             # Create comprehensive function - IMPROVED NORMALIZATION
             def comprehensive_func(x):
-                scores = []
+                total_score = 0.0
+                weight_sum = 0.0
                 
                 for result_col, func_data in self.result_functions.items():
-                    # Evaluate individual CSR function
+                    # Evaluate individual CSR function in its normalized space
                     if func_data['norm_type'] == "[-1, 1]":
                         x_norm = 2 * (x - func_data['x_min']) / (func_data['x_max'] - func_data['x_min']) - 1
                     elif func_data['norm_type'] == "[0, 1]":
@@ -1359,16 +1442,21 @@ class CSRApp:
                     design_row = self.create_design_matrix(x_norm.reshape(1, -1), func_data['bits_array'])
                     raw_val = np.dot(design_row[0], func_data['coefficients'])
                     
-                    # BOUND the predictions to reasonable ranges
+                    # REMOVE aggressive clipping - let the polynomial shape show
+                    # Only clip if it's extremely unreasonable (100x data range)
                     data_min, data_max = func_data['min_val'], func_data['max_val']
-                    bounded_val = np.clip(raw_val, data_min, data_max)
-                    
-                    # Normalize to [0,1] using ACTUAL data range
                     data_range = data_max - data_min
+                    reasonable_min = data_min - 2 * data_range  # Allow some extrapolation
+                    reasonable_max = data_max + 2 * data_range
+                    
+                    bounded_val = np.clip(raw_val, reasonable_min, reasonable_max)
+                    
+                    # Normalize using data range but don't force to [0,1]
                     if data_range > 1e-9:
+                        # Use sigmoid-like normalization to handle extrapolation gracefully
                         normalized_val = (bounded_val - data_min) / data_range
                     else:
-                        normalized_val = 0.5  # Middle value if no range
+                        normalized_val = 0.5
                         
                     # Apply polarity and objective
                     polarity = func_data.get('polarity', 1)
@@ -1377,14 +1465,19 @@ class CSRApp:
                         contribution = polarity * normalized_val
                     elif self.weight_combo.get() == "Minimum":
                         contribution = polarity * (1 - normalized_val)
-                    else:
-                        # Handle absolute value objectives
-                        contribution = polarity * normalized_val
-                        
-                    scores.append(contribution)
+                    elif self.weight_combo.get() == "Maximum absolute value":
+                        contribution = polarity * abs(normalized_val)
+                    else:  # Minimum absolute value
+                        contribution = polarity * (1 - abs(normalized_val))
+                    
+                    # Weight by R² value to prioritize better-fitting models
+                    r2 = func_data['model'].score(func_data['X_design'], func_data['y'])
+                    weight = max(0.1, r2)  # Ensure minimum weight
+                    
+                    total_score += weight * contribution
+                    weight_sum += weight
                 
-                # Return average score
-                return np.mean(scores) if scores else 0.0
+                return total_score / weight_sum if weight_sum > 0 else 0.0
                     
             self.comprehensive_function = comprehensive_func
             
@@ -1433,14 +1526,27 @@ class CSRApp:
                 self.x_factor_combo.current(0)
                 self.y_factor_combo.current(min(1, len(display_factor_names)-1))
             
+            # FIX: CALL PLOT RESULTS FOR COMPREHENSIVE OPTIMIZATION
+            print("DEBUG: Calling plot_results for comprehensive optimization")
+            self.plot_results(len(self.factor_cols), 0, min(1, len(self.factor_cols)-1))
+            
             self.update_3d_plot()
+            
+            print("\nDEBUG: Individual CSR functions fitted, running comprehensive analysis...")
+            self._debug_comprehensive_equations()
+
+            # Debug: Check if predictions are stored correctly
+            print(f"DEBUG: Comprehensive fitting completed with {len(self.result_functions)} outcomes")
+            for result_col, func_data in self.result_functions.items():
+                has_y_pred = 'y_pred' in func_data and func_data['y_pred'] is not None
+                print(f"DEBUG: {result_col} - has predictions: {has_y_pred}, shape: {func_data['y_pred'].shape if has_y_pred else 'N/A'}")
 
         except Exception as e:
             import traceback
             print(f"DEBUG: Comprehensive fitting error: {str(e)}")
             print(f"DEBUG: Traceback: {traceback.format_exc()}")
             raise Exception(f"Comprehensive fitting failed: {str(e)}")
-        
+
     def _generate_comprehensive_equation_and_definitions(self):
         """Generate equation display for comprehensive optimization"""
         if not hasattr(self, 'result_functions'):
@@ -2195,77 +2301,116 @@ class CSRApp:
                 pane_ax.set_pane_color((1.0, 1.0, 1.0, 0.0))
                 pane_ax.pane.set_edgecolor('#D0D0D0')
 
-            # Get the ranges for the selected factors
+            # Get the ranges for the selected factors - use finer resolution
             x1_orig_plot_axis = np.linspace(self.X_original_scale[:, x_idx].min(), 
-                                        self.X_original_scale[:, x_idx].max(), 20)
+                                        self.X_original_scale[:, x_idx].max(), 30)
             x2_orig_plot_axis = np.linspace(self.X_original_scale[:, y_idx].min(), 
-                                        self.X_original_scale[:, y_idx].max(), 20)
+                                        self.X_original_scale[:, y_idx].max(), 30)
             x1_grid_orig, x2_grid_orig = np.meshgrid(x1_orig_plot_axis, x2_orig_plot_axis)
             z_csr_values_grid = np.zeros_like(x1_grid_orig)
 
             # Get fixed values for other factors (use extremum point if available, otherwise mean)
             fixed_factor_values_original_scale = np.mean(self.X_original_scale, axis=0)
+            
+            # FIXED: Handle extremum point for both single and comprehensive optimization
+            extremum_x_orig_for_plotting = None
+            extremum_value_for_plotting = None
+            
             if (self.extremum_point and self.extremum_point['x'] is not None and 
                 len(self.extremum_point['x']) == n_factors):
+                
                 if hasattr(self, 'comprehensive_function'):
-                    fixed_factor_values_original_scale = self.extremum_point['x']
+                    # Comprehensive optimization - already in original scale
+                    extremum_x_orig_for_plotting = self.extremum_point['x']
+                    extremum_value_for_plotting = self.extremum_point['value']
+                    print(f"DEBUG: Comprehensive extremum for plotting: {extremum_x_orig_for_plotting}")
                 else:
-                    unnorm_temp = self._unnormalize_point(self.extremum_point.get('x_normalized', self.extremum_point['x']))
-                    if unnorm_temp is not None:
-                        fixed_factor_values_original_scale = unnorm_temp
-
-            # Evaluate the CSR function across the grid
-            for i_grid in range(x1_grid_orig.shape[0]):
-                for j_grid in range(x1_grid_orig.shape[1]):
-                    current_full_point_orig_scale = fixed_factor_values_original_scale.copy()
-                    current_full_point_orig_scale[x_idx] = x1_grid_orig[i_grid, j_grid]
-                    current_full_point_orig_scale[y_idx] = x2_grid_orig[i_grid, j_grid]
+                    # Single optimization - need to handle normalization properly
+                    if 'x_normalized' in self.extremum_point:
+                        # Use normalized point and convert to original scale
+                        x_normalized = self.extremum_point['x_normalized']
+                        if self.norm_select.get() == "[-1, 1]":
+                            extremum_x_orig_for_plotting = (x_normalized + 1) / 2 * (self.norm_x_max - self.norm_x_min) + self.norm_x_min
+                        elif self.norm_select.get() == "[0, 1]":
+                            extremum_x_orig_for_plotting = x_normalized * (self.norm_x_max - self.norm_x_min) + self.norm_x_min
+                        else:
+                            extremum_x_orig_for_plotting = x_normalized
+                    else:
+                        # Fallback: use x directly (might already be in original scale)
+                        extremum_x_orig_for_plotting = self.extremum_point['x']
                     
-                    if hasattr(self, 'comprehensive_function'):
-                        # For comprehensive optimization
+                    extremum_value_for_plotting = self.extremum_point['value']
+                    print(f"DEBUG: Single extremum for plotting - original: {extremum_x_orig_for_plotting}")
+                    print(f"DEBUG: Single extremum value: {extremum_value_for_plotting}")
+                
+                # Use extremum point for fixed values
+                fixed_factor_values_original_scale = extremum_x_orig_for_plotting.copy()
+
+            # NEW: Improved comprehensive function evaluation
+            if hasattr(self, 'comprehensive_function'):
+                # Evaluate the comprehensive function across the grid
+                for i_grid in range(x1_grid_orig.shape[0]):
+                    for j_grid in range(x1_grid_orig.shape[1]):
+                        current_full_point_orig_scale = fixed_factor_values_original_scale.copy()
+                        current_full_point_orig_scale[x_idx] = x1_grid_orig[i_grid, j_grid]
+                        current_full_point_orig_scale[y_idx] = x2_grid_orig[i_grid, j_grid]
+                        
+                        # Direct evaluation without additional clipping
                         z_csr_values_grid[i_grid, j_grid] = self.comprehensive_function(current_full_point_orig_scale)
-                    elif hasattr(self, 'coefficients') and hasattr(self, 'bits_array'):
-                        # For single result optimization
+            
+            elif hasattr(self, 'coefficients') and hasattr(self, 'bits_array'):
+                # Single result case - use existing logic
+                for i_grid in range(x1_grid_orig.shape[0]):
+                    for j_grid in range(x1_grid_orig.shape[1]):
+                        current_full_point_orig_scale = fixed_factor_values_original_scale.copy()
+                        current_full_point_orig_scale[x_idx] = x1_grid_orig[i_grid, j_grid]
+                        current_full_point_orig_scale[y_idx] = x2_grid_orig[i_grid, j_grid]
+                        
                         current_full_point_norm_scale = self._normalize_point(current_full_point_orig_scale)
                         if current_full_point_norm_scale is not None:
                             z_csr_values_grid[i_grid, j_grid] = self.evaluate_csr_at_point(current_full_point_norm_scale)
                         else:
                             z_csr_values_grid[i_grid, j_grid] = np.nan
-                    else:
-                        z_csr_values_grid[i_grid, j_grid] = np.nan
 
-            # Plot the surface
-            surf = ax2.plot_surface(x1_grid_orig, x2_grid_orig, z_csr_values_grid, 
+            # Remove any extreme outliers that might distort the plot
+            z_clean = np.copy(z_csr_values_grid)
+            z_mean = np.nanmean(z_clean)
+            z_std = np.nanstd(z_clean)
+            outlier_mask = np.abs(z_clean - z_mean) > 3 * z_std
+            z_clean[outlier_mask] = np.nan
+
+            # Plot the surface with improved settings
+            surf = ax2.plot_surface(x1_grid_orig, x2_grid_orig, z_clean, 
                                 cmap='viridis', alpha=0.9, edgecolor='#555555', 
-                                linewidth=0.15, antialiased=True)
+                                linewidth=0.1, antialiased=True, rstride=1, cstride=1)
 
-            # FIXED: Plot extremum point if available - REPLACE THIS SECTION
-            if (self.extremum_point and self.extremum_point['x'] is not None and 
-                len(self.extremum_point['x']) == n_factors):
+            # FIXED: Plot extremum point if available - PROPERLY HANDLED FOR BOTH CASES
+            if extremum_x_orig_for_plotting is not None and extremum_value_for_plotting is not None:
+                print(f"DEBUG: Attempting to plot extremum at ({extremum_x_orig_for_plotting[x_idx]:.4f}, {extremum_x_orig_for_plotting[y_idx]:.4f}, {extremum_value_for_plotting:.4f})")
                 
-                # FIXED: Handle both comprehensive and single result optimization
-                if hasattr(self, 'comprehensive_function'):
-                    # For comprehensive optimization, we already have original scale coordinates
-                    extremum_x_orig = self.extremum_point['x']
-                    extremum_value = self.extremum_point['value']
-                else:
-                    # For single result, unnormalize if needed
-                    extremum_x_orig = self.extremum_point.get('x', None)
-                    extremum_value = self.extremum_point.get('value', 0)
-                    # If we have normalized coordinates, unnormalize them
-                    if 'x_normalized' in self.extremum_point:
-                        extremum_x_orig = self._unnormalize_point(self.extremum_point['x_normalized'])
+                # Verify the point is within the plot bounds
+                x_min_bound = self.X_original_scale[:, x_idx].min()
+                x_max_bound = self.X_original_scale[:, x_idx].max()
+                y_min_bound = self.X_original_scale[:, y_idx].min()
+                y_max_bound = self.X_original_scale[:, y_idx].max()
                 
-                if extremum_x_orig is not None and len(extremum_x_orig) > 0:
-                    print(f"DEBUG: Plotting extremum at ({extremum_x_orig[x_idx]:.4f}, {extremum_x_orig[y_idx]:.4f}, {extremum_value:.4f})")
-                    ax2.scatter([extremum_x_orig[x_idx]], 
-                            [extremum_x_orig[y_idx]], 
-                            [extremum_value], 
+                x_within_bounds = (x_min_bound <= extremum_x_orig_for_plotting[x_idx] <= x_max_bound)
+                y_within_bounds = (y_min_bound <= extremum_x_orig_for_plotting[y_idx] <= y_max_bound)
+                
+                if x_within_bounds and y_within_bounds:
+                    ax2.scatter([extremum_x_orig_for_plotting[x_idx]], 
+                            [extremum_x_orig_for_plotting[y_idx]], 
+                            [extremum_value_for_plotting], 
                             c='gold', s=200, marker='*', edgecolor='black', 
                             linewidth=1, label='Optimal Point', depthshade=True, zorder=10)
                     
                     # Add legend
                     ax2.legend(fontsize=8, facecolor='#F0F0F0', framealpha=0.8)
+                    print("DEBUG: Extremum point successfully plotted")
+                else:
+                    print(f"DEBUG: Extremum point outside plot bounds - X: {x_within_bounds}, Y: {y_within_bounds}")
+                    print(f"DEBUG: X bounds: [{x_min_bound}, {x_max_bound}], extremum X: {extremum_x_orig_for_plotting[x_idx]}")
+                    print(f"DEBUG: Y bounds: [{y_min_bound}, {y_max_bound}], extremum Y: {extremum_x_orig_for_plotting[y_idx]}")
 
             # Set axis labels
             x_axis_name = self.col_name_mapping.get(self.factor_cols[x_idx], self.factor_cols[x_idx])
@@ -2282,19 +2427,25 @@ class CSRApp:
             cbar.ax.tick_params(labelsize=8)
             cbar.outline.set_edgecolor('gray')
             
-            # Set view angle
-            ax2.view_init(elev=28, azim=130)
+            # Set view angle for better visibility
+            ax2.view_init(elev=25, azim=45)
             
             # Adjust tick parameters
             for axis_obj in [ax2.xaxis, ax2.yaxis, ax2.zaxis]:
                 axis_obj.set_tick_params(pad=3, labelsize=8)
                 axis_obj.label.set_size(9)
 
+            # Auto-scale the z-axis to show the proper shape
+            z_min, z_max = np.nanmin(z_clean), np.nanmax(z_clean)
+            if not (np.isnan(z_min) or np.isnan(z_max)):
+                z_range = z_max - z_min
+                if z_range > 1e-9:  # Only adjust if there's meaningful range
+                    ax2.set_zlim(z_min - 0.1 * z_range, z_max + 0.1 * z_range)
+
             self.canvas2.draw()
 
         except Exception as e:
             messagebox.showerror("Error", f"Failed to update 3D plot: {str(e)}")
-            # Print the full traceback to help with debugging
             import traceback
             traceback.print_exc()
 
@@ -2904,19 +3055,36 @@ class CSRApp:
         return verification_text
 
     def _normalize_point(self, x_point_original_scale):
-        if x_point_original_scale is None: return None
+        """Debug this method to ensure proper normalization"""
+        if x_point_original_scale is None: 
+            print("DEBUG: _normalize_point received None")
+            return None
+            
         x_original_np = np.array(x_point_original_scale, dtype=float)
         norm_type = self.norm_select.get()
+        
+        print(f"DEBUG: Normalizing point - original: {x_original_np}, type: {norm_type}")
+        
         if norm_type == "No normalization" or self.norm_x_min is None or self.norm_x_max is None:
+            print("DEBUG: No normalization applied")
             return x_original_np
-        if len(x_original_np) != len(self.norm_x_min): return None
+            
+        if len(x_original_np) != len(self.norm_x_min): 
+            print(f"DEBUG: Dimension mismatch: point {len(x_original_np)} vs min {len(self.norm_x_min)}")
+            return None
+            
         range_val = self.norm_x_max - self.norm_x_min
         range_val[range_val == 0] = 1
+        
         if norm_type == "[-1, 1]":
-            return 2 * (x_original_np - self.norm_x_min) / range_val - 1
+            result = 2 * (x_original_np - self.norm_x_min) / range_val - 1
         elif norm_type == "[0, 1]":
-            return (x_original_np - self.norm_x_min) / range_val
-        return x_original_np
+            result = (x_original_np - self.norm_x_min) / range_val
+        else:
+            result = x_original_np
+            
+        print(f"DEBUG: Normalization result: {result}")
+        return result
 
     def _unnormalize_point(self, x_point_fitting_scale):
         if x_point_fitting_scale is None: return None
@@ -3067,6 +3235,9 @@ class CSRApp:
         return f"{'+' if coef >= 0 else '-'} {term_str}"
 
     def plot_results(self, n_factors, x_plot_idx=0, y_plot_idx=1):
+        print(f"DEBUG: plot_results called with n_factors={n_factors}")
+        print(f"DEBUG: has result_functions: {hasattr(self, 'result_functions')}")
+        
         self.figure1.clf() 
         self.figure1.subplots_adjust(bottom=0.18, left=0.18, top=0.9, right=0.95) 
         self.figure1.patch.set_facecolor('#F0F0F0')
@@ -3076,40 +3247,77 @@ class CSRApp:
         for spine in ax1.spines.values(): 
             spine.set_edgecolor('gray')
         
-        # Handle comprehensive optimization case
+        # Handle comprehensive optimization case - FIXED VERSION
         if hasattr(self, 'result_functions'):
+            print(f"DEBUG: Plotting comprehensive results with {len(self.result_functions)} outcomes")
             # For comprehensive optimization, we'll show all individual fits
             colors = plt.cm.tab10(np.linspace(0, 1, len(self.result_functions)))
             
+            all_y = []
+            all_y_pred = []
+            
             for i, (result_col, func_data) in enumerate(self.result_functions.items()):
                 y = func_data['y']
-                y_pred = func_data['model'].predict(func_data['X_design'])
+                y_pred = func_data['y_pred']  # Use stored predictions
                 
+                print(f"DEBUG: Outcome {result_col} - y shape: {y.shape}, y_pred shape: {y_pred.shape}")
+                
+                # Store for overall min/max calculation
+                all_y.extend(y)
+                all_y_pred.extend(y_pred)
+                
+                # Plot this outcome
                 ax1.scatter(y, y_pred, alpha=0.7, edgecolors='#333333', s=40, 
                             color=colors[i], label=self.col_name_mapping.get(result_col, result_col))
             
-            min_val = min(min(func['y'].min(), func['model'].predict(func['X_design']).min()) 
-                       for func in self.result_functions.values())
-            max_val = max(max(func['y'].max(), func['model'].predict(func['X_design']).max()) 
-                       for func in self.result_functions.values())
-            
-            ax1.plot([min_val, max_val], [min_val, max_val], 'r--', lw=1.5, label='Perfect Fit')
-            ax1.legend(fontsize=9)
+            # Calculate overall min/max for perfect fit line
+            if all_y and all_y_pred:
+                min_val = min(min(all_y), min(all_y_pred))
+                max_val = max(max(all_y), max(all_y_pred))
+                
+                ax1.plot([min_val, max_val], [min_val, max_val], 'r--', lw=1.5, label='Perfect Fit')
+                ax1.legend(fontsize=9)
+                
+                # Calculate and display overall R² for comprehensive case
+                if len(all_y) == len(all_y_pred):
+                    overall_r2 = np.corrcoef(all_y, all_y_pred)[0,1]**2
+                    ax1.text(0.05, 0.95, f'Overall R² = {overall_r2:.4f}', 
+                            transform=ax1.transAxes, fontsize=10, 
+                            bbox=dict(boxstyle="round,pad=0.3", facecolor='white', alpha=0.8))
+                    print(f"DEBUG: Overall R² for comprehensive: {overall_r2:.4f}")
+            else:
+                ax1.text(0.5, 0.5, "No prediction data available", 
+                        ha="center", va="center", fontsize=10, color='gray')
+                print("DEBUG: No prediction data available for comprehensive plot")
+                
         elif self.y is not None and self.y_pred is not None:
+            print("DEBUG: Plotting single result")
             # Single result case
             ax1.scatter(self.y, self.y_pred, alpha=0.7, edgecolors='#333333', s=40, color="#007ACC")
             min_val, max_val = min(self.y.min(), self.y_pred.min()), max(self.y.max(), self.y_pred.max())
             ax1.plot([min_val, max_val], [min_val, max_val], 'r--', lw=1.5, label='Perfect Fit')
+            
+            # Calculate and display R² for single result case
+            train_r2 = np.corrcoef(self.y, self.y_pred)[0,1]**2
+            ax1.text(0.05, 0.95, f'R² = {train_r2:.4f}', 
+                    transform=ax1.transAxes, fontsize=10, 
+                    bbox=dict(boxstyle="round,pad=0.3", facecolor='white', alpha=0.8))
+            
             ax1.legend(fontsize=9)
         else:
-            ax1.text(0.5, 0.5, "No data to plot", ha="center", va="center", fontsize=10, color='gray')
+            ax1.text(0.5, 0.5, "No data to plot", 
+                    ha="center", va="center", fontsize=10, color='gray')
+            print("DEBUG: No data available for plotting")
         
         ax1.set_xlabel('Actual Values', fontsize=10, fontweight='bold')
         ax1.set_ylabel('Predicted Values', fontsize=10, fontweight='bold')
         ax1.set_title('Actual vs. Predicted Performance', fontsize=11, fontweight='bold')
+        
+        print("DEBUG: Drawing canvas1")
         self.canvas1.draw()
+        print("DEBUG: Canvas1 drawn")
 
-        # Handle the 3D plot
+        # The rest of your existing 3D plot code remains the same...
         self.figure2.clf()
         self.figure2.subplots_adjust(bottom=0.18, left=0.1, right=0.85, top=0.9)
         self.figure2.patch.set_facecolor('#F0F0F0')
@@ -3283,30 +3491,75 @@ class CSRApp:
         if design_row.shape[1] == 0:
             return np.nan
         return np.dot(design_row[0], self.coefficients)
-
+            
     def get_evaluation_point_for_coeffs(self):
-        if self.X_original_scale is None: messagebox.showinfo("Info", "Please load data first."); return None
+        """Get the correct evaluation point for coefficient analysis"""
+        if self.X_original_scale is None: 
+            messagebox.showinfo("Info", "Please load data first.")
+            return None
+            
         eval_choice = self.eval_point_combo.get()
-        if eval_choice == "Factors at Minimum": return self.X_original_scale.min(axis=0)
-        if eval_choice == "Factors at Maximum": return self.X_original_scale.max(axis=0)
-        if eval_choice == "Factors at Extremum":
+        print(f"DEBUG: Evaluation choice: {eval_choice}")
+        print(f"DEBUG: X_original_scale range: min={self.X_original_scale.min(axis=0)}, max={self.X_original_scale.max(axis=0)}")
+        
+        if eval_choice == "Factors at Minimum": 
+            point = self.X_original_scale.min(axis=0)
+        elif eval_choice == "Factors at Maximum": 
+            point = self.X_original_scale.max(axis=0)
+        elif eval_choice == "Factors at Extremum":
             if self.extremum_point and self.extremum_point['x'] is not None:
-                if hasattr(self, 'X') and self.X is not None and len(self.extremum_point['x']) == self.X.shape[1]:
-                    unnormalized_extremum = self._unnormalize_point(self.extremum_point['x'])
-                    if unnormalized_extremum is not None: return unnormalized_extremum
-                messagebox.showwarning("Warning", "Extremum point dimension mismatch or unnormalization failed. Using mean."); return np.mean(self.X_original_scale, axis=0)
-            messagebox.showinfo("Info", "Extremum point not available. Using mean."); return np.mean(self.X_original_scale, axis=0)
-        return np.mean(self.X_original_scale, axis=0)
+                point = self.extremum_point['x']  # This is already in original scale
+            else:
+                messagebox.showinfo("Info", "Extremum point not available. Using mean.")
+                point = np.mean(self.X_original_scale, axis=0)
+        else:
+            point = np.mean(self.X_original_scale, axis=0)
+        
+        print(f"DEBUG: Returning point: {point}")
+        return point
+    
+    def debug_pie_chart_calculation(self, x_eval_original_scale_for_contrib):
+        """Debug method to trace pie chart calculation issues"""
+        print("\n=== PIE CHART DEBUGGING ===")
+        print(f"Evaluation point (original): {x_eval_original_scale_for_contrib}")
+        
+        # Normalize the point
+        x_eval_normalized = self._normalize_point(x_eval_original_scale_for_contrib)
+        print(f"Evaluation point (normalized): {x_eval_normalized}")
+        
+        # Calculate the total value using normalized inputs (should match extremum value)
+        design_row = self.create_design_matrix(x_eval_normalized.reshape(1, -1), self.bits_array)
+        total_value = np.dot(design_row[0], self.coefficients)
+        print(f"Total value from normalized inputs: {total_value}")
+        print(f"Extremum value for comparison: {self.extremum_point['value']}")
+        
+        # Test individual term calculations
+        print("\nIndividual term contributions:")
+        for i, (coef_val, bits_def) in enumerate(zip(self.coefficients, self.bits_array)):
+            contribution = self.calculate_term_contribution(coef_val, bits_def, x_eval_original_scale_for_contrib)
+            if abs(contribution) > 1e-6:  # Only show significant terms
+                print(f"Term {i}: bits={bits_def}, coef={coef_val:.6f}, contrib={contribution:.6f}")
+        
+        print("=== END DEBUGGING ===\n")
 
     def calculate_term_contribution(self, coefficient_val, bits_row_def, x_eval_point_original_scale):
-        if x_eval_point_original_scale is None or len(x_eval_point_original_scale) != len(bits_row_def): return 0
+        if x_eval_point_original_scale is None or len(x_eval_point_original_scale) != len(bits_row_def): 
+            return 0
+        
+        # CRITICAL: Normalize the evaluation point to match training data
         x_eval_point_for_model_scale = self._normalize_point(x_eval_point_original_scale)
-        if x_eval_point_for_model_scale is None : return 0
+        if x_eval_point_for_model_scale is None: 
+            return 0
+            
         term_product_val = 1.0
         for factor_idx, power_val in enumerate(bits_row_def):
-            if factor_idx >= len(x_eval_point_for_model_scale): continue
-            if power_val == 1: term_product_val *= x_eval_point_for_model_scale[factor_idx]
-            elif power_val == 2: term_product_val *= x_eval_point_for_model_scale[factor_idx]**2
+            if factor_idx >= len(x_eval_point_for_model_scale): 
+                continue
+            if power_val == 1: 
+                term_product_val *= x_eval_point_for_model_scale[factor_idx]
+            elif power_val == 2: 
+                term_product_val *= x_eval_point_for_model_scale[factor_idx]**2
+                
         return coefficient_val * term_product_val
 
     def plot_full_pie_and_get_term_details(self, ax, data_values_map, chart_title_suffix, canvas_to_draw, initial_start_angle=120.0):
@@ -3506,6 +3759,8 @@ class CSRApp:
         if x_eval_original_scale_for_contrib is None:
             messagebox.showerror("Error", "Could not determine evaluation point for coefficient contributions.")
             return
+    
+        self.debug_pie_chart_calculation(x_eval_original_scale_for_contrib)
 
         # Calculate term contributions
         term_contributions_map = {

@@ -4005,7 +4005,7 @@ class CSRApp:
         # --- Max Nonzero Controls ---
         max_nonzero_frame = ttk.Frame(left_frame, style="App.TFrame")
         max_nonzero_frame.pack(fill='x', pady=(5,8))
-        ttk.Label(max_nonzero_frame, text="Max Nonzero Factors:").pack(side='left')
+        ttk.Label(max_nonzero_frame, text="Max Nonzero Parameters:").pack(side='left')
         self.oacd_max_nonzero_var = tk.IntVar(value=0)
         max_nonzero_entry = tk.Entry(max_nonzero_frame, textvariable=self.oacd_max_nonzero_var, width=7, font=self.entry_font, insertwidth=1, insertontime=500, insertofftime=500)
         max_nonzero_entry.pack(side='left', padx=(2,8))

@@ -25,11 +25,7 @@ For a system with:
 * `P` parameters
 * `M` levels for each parameter
 
-The search space becomes:
-
-[
-M^P
-]
+The search space becomes: $M^P$
 
 Traditional trial-and-error methods quickly become impractical.
 
@@ -37,9 +33,9 @@ The **Complex Systems Response (CSR) Equation** provides a deterministic, second
 
 Using Orthogonal Array Composite Design (OACD), the required number of experiments is reduced to:
 
-[
+$$
 \frac{P^2 + 3P + 2}{2}
-]
+$$
 
 instead of exhaustively searching the entire parameter space.
 
@@ -125,9 +121,9 @@ A design-of-experiments (DOE) method that minimizes the number of calibration te
 
 For `P` parameters:
 
-[
+$$
 \frac{P^2 + 3P + 2}{2}
-]
+$$
 
 experiments are required instead of testing all parameter combinations.
 
@@ -166,15 +162,15 @@ The CSR surface can be represented using a second-order nonlinear response equat
 
 For `P` parameters, the number of coefficients is:
 
-[
+$$
 1 + P + P + \frac{P(P-1)}{2}
-]
+$$
 
 which simplifies to:
 
-[
+$$
 \frac{P^2 + 3P + 2}{2}
-]
+$$
 
 This dramatically reduces experimental effort compared to brute-force optimization.
 

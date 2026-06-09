@@ -1,6 +1,6 @@
 # CSR APP
 
-A software platform for generating Orthogonal Array Composite Design (OACD) experiments, fitting the Complex Systems Response (CSR) equation, and optimizing multi-parameter systems.
+A software platform for generating Orthogonal Array Composite Design (OACD) experiments, analyzing the Complex Systems Response (CSR) equation, and optimizing multi-parameter systems.
 
 ---
 
@@ -48,7 +48,7 @@ instead of exhaustively searching the entire parameter space.
 # Key Features
 
 * Generate OACD experimental tables
-* Fit CSR equations from experimental data
+* Analyze CSR equations from experimental data
 * Perform single-objective or multiple-objective optimization
 * Normalize parameter ranges
 * Visualize CSR response surfaces
@@ -135,7 +135,7 @@ experiments are required instead of testing all parameter combinations.
 
 ## 6. Calibration Process
 
-The process of determining CSR coefficients by fitting experimental data to the CSR equation.
+The process of determining CSR coefficients by analyzing experimental data with the CSR equation.
 
 ---
 
@@ -285,7 +285,7 @@ C1 + C2 < 50
 After configuration:
 
 ```text
-Click → Run Fitting Process
+Click → Run Analyzing Process
 ```
 
 ---
@@ -296,13 +296,13 @@ After optimization completes, the software generates:
 
 ### CSR Equation
 
-The numerical expression of the fitted model.
+The numerical expression of the analysis model.
 
 ### Extremum
 
 The optimal parameter combination.
 
-### Model Fit Statistics
+### Model Analysis Statistics
 
 * R-square
 * RMSE
@@ -313,7 +313,7 @@ Comparison between measured and modeled outputs.
 
 ### CSR Response Surface Plot
 
-Visualization of the fitted response surface.
+Visualization of the analyzed response surface.
 
 ### Coefficient Analysis
 
@@ -336,7 +336,7 @@ Load Experimental Data
         ↓
 Configure Optimization Settings
         ↓
-Run CSR Fitting Process
+Run CSR Analysis Process
         ↓
 Analyze Outputs and Extremum
 ```
